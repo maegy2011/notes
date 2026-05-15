@@ -22,3 +22,8 @@ declare module 'sql.js' {
   export default function initSqlJs(options?: InitSqlJsOptions): Promise<SqlJsStatic>;
   export type { Database, QueryExecResult, SqlJsStatic };
 }
+
+declare module '*.wasm?url' {
+  const src: string;
+  export default src;
+}

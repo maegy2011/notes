@@ -5,6 +5,7 @@
  */
 
 import initSqlJs, { Database } from 'sql.js';
+import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { Note, AppEvent, AppTask, ShoppingList } from '../types';
 
 const DB_STORAGE_KEY = 'mohafadaty_sqlite_db_v1';
@@ -62,7 +63,9 @@ export const initDatabase = async (): Promise<Database> => {
   if (db) return db;
 
   SQL = await initSqlJs({
-    locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/sql.js@1.12.0/dist/${file}`,
+    // Vite resolves the WASM file into a deploy-safe asset/data URL.
+    // This avoids 404s such as sql-wasm-browser.wasm and avoids relying on a CDN.
+    locateFile: () => sqlWasmUrl,
   });
 
   const existingData = loadFromLocalStorage();
