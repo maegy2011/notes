@@ -1,0 +1,22 @@
+{
+  "name": "ملاحظاتي - تطبيق إدارة الملاحظات",
+  "short_name": "ملاحظاتي",
+  "description": "تطبيق ويب متكامل لإدارة الملاحظات، المهام، الأحداث، قوائم التسوق، والتقويم. يعمل بالكامل دون اتصال بالإنترنت ويدعم المزامنة السحابية.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#f59e0b",
+  "lang": "ar",
+  "dir": "rtl",
+  "categories": ["productivity", "utilities", "lifestyle"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

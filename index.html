@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+
+    <!-- Primary Meta Tags -->
+    <title>ملاحظاتي - تطبيق إدارة الملاحظات والمهام والأحداث</title>
+    <meta name="description" content="تطبيق ويب عربي متكامل لإدارة الملاحظات، المهام، الأحداث، التقويم، وقوائم التسوق. يعمل بالكامل بدون إنترنت بقاعدة بيانات SQLite محلية مع مزامنة Turso السحابية الاختيارية." />
+    <meta name="keywords" content="ملاحظات, مهام, تقويم, أحداث, تسوق, تطبيق عربي, SQLite, Turso, PWA, Notes app" />
+    <meta name="author" content="Mohafadaty" />
+    <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="/" />
+    <meta property="og:title" content="ملاحظاتي - تطبيق إدارة الملاحظات والمهام" />
+    <meta property="og:description" content="تطبيق ويب عربي متكامل: ملاحظات، مهام، تقويم، أحداث، تسوق. SQLite محلي + مزامنة Turso اختيارية." />
+    <meta property="og:image" content="/favicon.svg" />
+    <meta property="og:locale" content="ar_AR" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="ملاحظاتي - تطبيق إدارة الملاحظات" />
+    <meta name="twitter:description" content="تطبيق ويب عربي متكامل لإدارة الملاحظات، المهام، الأحداث، التقويم، وقوائم التسوق." />
+    <meta name="twitter:image" content="/favicon.svg" />
+
+    <!-- iOS Web App Capabilities -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="ملاحظاتي" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- Favicons & PWA Manifest -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- Google Fonts: Cairo (Arabic) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-slate-900 text-slate-100 font-['Cairo'] antialiased selection:bg-amber-500 selection:text-slate-900">
+    <div id="root"></div>
+    <noscript>
+      <div style="padding:2rem;text-align:center;font-family:Cairo,sans-serif;">
+        <h1>يجب تفعيل JavaScript لتشغيل التطبيق</h1>
+        <p>هذا التطبيق يعمل بالكامل في متصفحك ولا يرسل أي بيانات إلى أي خادم.</p>
+      </div>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
