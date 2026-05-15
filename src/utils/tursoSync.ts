@@ -13,18 +13,69 @@ interface SQLStatement {
 }
 
 const CONFIG_KEY = 'notes_app_turso_config_v1';
+const TOKEN_SESSION_KEY = 'turso_token_tmp';
+
+// ✅ Rate Limiter لمنع الإساءة
+class RateLimiter {
+  private timestamps: number[] = [];
+  constructor(
+    private maxRequests: number,
+    private windowMs: number
+  ) {}
+  
+  isAllowed(): boolean {
+    const now = Date.now();
+    this.timestamps = this.timestamps.filter(t => now - t < this.windowMs);
+    if (this.timestamps.length < this.maxRequests) {
+      this.timestamps.push(now);
+      return true;
+    }
+    return false;
+  }
+}
+
+const syncLimiter = new RateLimiter(5, 60_000); // ✅ 5 طلبات كل دقيقة
+
+// ✅ Fetch مع Timeout
+const fetchWithTimeout = async (
+  url: string,
+  options: RequestInit,
+  timeoutMs = 10000
+): Promise<Response> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+};
 
 export const tursoHelpers = {
   getConfig: (): TursoConfig => {
     try {
+      // ✅ الإعدادات من localStorage بدون التوكن
       const data = localStorage.getItem(CONFIG_KEY);
-      if (data) return JSON.parse(data);
+      const cfg = data ? JSON.parse(data) : { url: '', autoSync: false };
+      // ✅ التوكن من sessionStorage فقط (يُمسح عند إغلاق المتصفح)
+      const token = sessionStorage.getItem(TOKEN_SESSION_KEY) || '';
+      return { ...cfg, token };
     } catch {}
     return { url: '', token: '', autoSync: false };
   },
 
   saveConfig: (cfg: TursoConfig) => {
-    localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
+    // ✅ احفظ الإعدادات بدون التوكن في localStorage
+    const { token, ...safeConfig } = cfg;
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(safeConfig));
+    // ✅ التوكن في sessionStorage فقط
+    if (token) {
+      sessionStorage.setItem(TOKEN_SESSION_KEY, token);
+    }
+  },
+
+  clearToken: () => {
+    sessionStorage.removeItem(TOKEN_SESSION_KEY);
   },
 
   sanitizeUrl: (url: string): string => {
@@ -65,18 +116,29 @@ export const tursoHelpers = {
       };
     });
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${config.token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ requests }),
-    });
+    }, 10000); // ✅ 10 ثواني كحد أقصى
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(errText || `HTTP ${response.status}`);
+      // ✅ log تقني داخلي فقط
+      console.error('[Turso] Error:', response.status, errText);
+      
+      // ✅ رسالة عامة وآمنة للمستخدم
+      const userMessage =
+        response.status === 401 ? 'خطأ في المصادقة — تحقق من الـ Token' :
+        response.status === 403 ? 'ليس لديك صلاحية الوصول' :
+        response.status === 429 ? 'تجاوزت الحد المسموح — انتظر قليلاً' :
+        response.status >= 500 ? 'خطأ في الخادم — حاول لاحقاً' :
+        'حدث خطأ في المزامنة';
+      
+      throw new Error(userMessage);
     }
 
     const result = await response.json();
@@ -117,6 +179,12 @@ export const tursoHelpers = {
   /** Synchronize local SQLite tables with Turso Edge DB */
   syncNow: async (config: TursoConfig, showToast: (msg: string) => void): Promise<boolean> => {
     if (!config.url || !config.token) return false;
+
+    // ✅ Rate Limiting
+    if (!syncLimiter.isAllowed()) {
+      showToast('⏸️ الرجاء الانتظار قبل المزامنة مرة أخرى');
+      return false;
+    }
 
     try {
       showToast('🔄 جاري الاتصال بقاعدة بيانات Turso...');

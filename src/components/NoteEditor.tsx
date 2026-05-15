@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Note, NoteCategory, NoteColor, ChecklistItem, ReminderData, ReminderType } from '../types';
 import { CATEGORY_LABELS, COLOR_CLASSES } from '../data/initialNotes';
+import DOMPurify from 'dompurify';
 import {
   ArrowRight,
   Check,
@@ -131,8 +132,17 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
   }, [note]);
 
   useEffect(() => {
-    if (editorRef.current && editorRef.current.innerHTML !== content) {
-      editorRef.current.innerHTML = content;
+    if (editorRef.current) {
+      // ✅ تعقيم HTML قبل الإدراج لمنع XSS
+      const sanitized = DOMPurify.sanitize(content, {
+        ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'p', 'br',
+                       'ul', 'ol', 'li', 'h1', 'h2', 'h3',
+                       'blockquote', 'code', 'pre', 'span'],
+        ALLOWED_ATTR: ['style', 'class'],
+        FORBID_TAGS: ['script', 'iframe', 'object', 'embed'],
+        FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
+      });
+      editorRef.current.innerHTML = sanitized;
     }
   }, [content]);
 

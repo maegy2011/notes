@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Lock as LockIcon, Eye, EyeOff, LockKeyhole, AlertTriangle, Delete } from 'lucide-react';
+import CryptoJS from 'crypto-js';
 
-const PIN_STORAGE_KEY = 'notes_app_pin_v1';
+const PIN_STORAGE_KEY = 'notes_app_pin_hash_v1';
+const DEVICE_SALT_KEY = '_app_salt';
 const APP_LOCK_KEY = 'notes_app_lock_enabled_v1';
 const LOCKED_NOTES_KEY = 'notes_app_locked_ids_v1';
 
@@ -61,6 +63,35 @@ export const PinLock: React.FC<PinLockProps> = ({
     }
   };
 
+  // ✅ توليد salt ثابت لهذا الجهاز
+  const getDeviceSalt = (): string => {
+    let salt = localStorage.getItem(DEVICE_SALT_KEY);
+    if (!salt) {
+      salt = CryptoJS.lib.WordArray.random(16).toString();
+      localStorage.setItem(DEVICE_SALT_KEY, salt);
+    }
+    return salt;
+  };
+
+  // ✅ تجزئة آمنة للـ PIN
+  const hashPin = (pin: string): string => {
+    const salt = getDeviceSalt();
+    return CryptoJS.SHA256(pin + salt).toString();
+  };
+
+  // ✅ التحقق من PIN
+  const verifyPin = (enteredPin: string, storedHash: string): boolean => {
+    return hashPin(enteredPin) === storedHash;
+  };
+
+  const getStoredPinHash = (): string | null => {
+    return localStorage.getItem(PIN_STORAGE_KEY);
+  };
+
+  const savePinHash = (newPin: string) => {
+    localStorage.setItem(PIN_STORAGE_KEY, hashPin(newPin));
+  };
+
   const handleDelete = () => {
     if (currentIndex === 0) return;
     const newPin = [...pin];
@@ -70,30 +101,18 @@ export const PinLock: React.FC<PinLockProps> = ({
     setError(null);
   };
 
-  const getStoredPin = (): string | null => {
-    try {
-      return localStorage.getItem(PIN_STORAGE_KEY);
-    } catch {
-      return null;
-    }
-  };
-
-  const savePin = (newPin: string) => {
-    localStorage.setItem(PIN_STORAGE_KEY, newPin);
-  };
-
   const handleComplete = (enteredPin: string) => {
     if (mode === 'set') {
       if (!isConfirming) {
-        setFirstPin(enteredPin);
+        setFirstPin(hashPin(enteredPin));
         setIsConfirming(true);
         setPin(Array(4).fill(''));
         setCurrentIndex(0);
         showToast?.('أعد إدخال الرقم السري للتأكيد');
         return;
       } else {
-        if (enteredPin === firstPin) {
-          savePin(enteredPin);
+        if (verifyPin(enteredPin, firstPin)) {
+          savePinHash(enteredPin);
           showToast?.('✅ تم تعيين الرقم السري بنجاح');
           onSuccess();
         } else {
@@ -108,8 +127,8 @@ export const PinLock: React.FC<PinLockProps> = ({
     }
 
     // unlock, verify, unlock_all, lock_all
-    const storedPin = getStoredPin();
-    if (storedPin === enteredPin) {
+    const storedHash = getStoredPinHash();
+    if (storedHash && verifyPin(enteredPin, storedHash)) {
       onSuccess();
     } else {
       setError('الرقم السري غير صحيح!');

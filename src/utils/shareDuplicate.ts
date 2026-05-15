@@ -1,13 +1,19 @@
 import { Note, AppTask, AppEvent, ShoppingList, ChecklistItem } from '../types';
+import DOMPurify from 'dompurify';
 
 /* ─────────────────────────────────────────────
    Helpers — strip HTML & format dates
    ───────────────────────────────────────────── */
 const stripHtml = (html: string): string => {
   if (!html) return '';
+  // ✅ تعقيم أولاً ثم استخراج النص فقط
+  const clean = DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: [],
+    ALLOWED_ATTR: []
+  });
   const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  return (tmp.textContent || tmp.innerText || '').trim();
+  tmp.textContent = clean; // ✅ textContent لا يُنفذ HTML
+  return tmp.textContent || '';
 };
 
 const fmtDateTime = (iso?: string): string => {
@@ -18,7 +24,16 @@ const fmtDateTime = (iso?: string): string => {
   });
 };
 
-const uid = () => Date.now().toString() + Math.random().toString(36).slice(2, 7);
+// ✅ UID آمن باستخدام Web Crypto API
+export const uid = (): string => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // ✅ fallback آمن
+  const arr = new Uint8Array(16);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+};
 
 /* ─────────────────────────────────────────────
    Format entities to plain text for sharing

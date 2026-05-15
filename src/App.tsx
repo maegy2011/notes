@@ -936,15 +936,49 @@ export default function App() {
     }
   };
 
+  // ─── Validate Import Data ───
+  const validateImportData = (data: unknown): boolean => {
+    if (!data || typeof data !== 'object') return false;
+    const d = data as Record<string, unknown>;
+    
+    // تحقق من البنية الأساسية
+    if (d.notes !== undefined && !Array.isArray(d.notes)) return false;
+    if (d.tasks !== undefined && !Array.isArray(d.tasks)) return false;
+    if (d.events !== undefined && !Array.isArray(d.events)) return false;
+    
+    // حد أقصى معقول للحجم
+    const jsonSize = JSON.stringify(data).length;
+    if (jsonSize > 10 * 1024 * 1024) return false; // 10MB كحد أقصى
+    
+    return true;
+  };
+
   // ─── Import Data (Restore) ───
   const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // ✅ تحقق من نوع الملف
+    if (!file.name.endsWith('.json') && file.type !== 'application/json') {
+      showToast('❌ يجب أن يكون الملف بصيغة JSON');
+      return;
+    }
+    // ✅ تحقق من حجم الملف
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('❌ الملف كبير جداً (الحد الأقصى 10MB)');
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
         const imported = JSON.parse(event.target?.result as string);
+        
+        // ✅ تحقق من البنية
+        if (!validateImportData(imported)) {
+          showToast('❌ بنية الملف غير صحيحة');
+          return;
+        }
         
         // Validation
         if (imported.version !== 'notes_app_backup_v1') {
