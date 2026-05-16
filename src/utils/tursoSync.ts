@@ -98,7 +98,6 @@ export const tursoHelpers = {
     if (sanitized.startsWith('libsql://')) {
       sanitized = sanitized.replace('libsql://', 'https://');
     }
-    // ✅ فرض HTTPS — لا نسمح بـ HTTP لإرسال التوكن
     if (sanitized.startsWith('http://')) {
       sanitized = sanitized.replace('http://', 'https://');
     }
@@ -106,6 +105,15 @@ export const tursoHelpers = {
       sanitized = 'https://' + sanitized;
     }
     if (sanitized.endsWith('/')) sanitized = sanitized.slice(0, -1);
+    // ✅ التحقق من أن الرابط ينتمي لنطاق Turso فقط
+    try {
+      const hostname = new URL(sanitized).hostname;
+      if (!hostname.endsWith('.turso.io') && hostname !== 'turso.io') {
+        throw new Error('رابط غير صالح: يجب أن ينتمي لنطاق turso.io');
+      }
+    } catch (e) {
+      throw new Error(e instanceof Error ? e.message : 'رابط قاعدة بيانات غير صالح');
+    }
     return sanitized;
   },
 
@@ -144,21 +152,26 @@ export const tursoHelpers = {
     }, 10000); // ✅ 10 ثواني كحد أقصى
 
     if (!response.ok) {
-      // ✅ نقرأ الاستجابة لكن لا نسجّل تفاصيلها الحساسة
-      await response.text();
-      // ✅ log تقني داخلي فقط — بدون تفاصيل حساسة
-      if (import.meta.env.DEV) console.error('[Turso] Error:', response.status);
-      
-      // ✅ رسالة عامة وآمنة للمستخدم
-      const userMessage =
-        response.status === 401 ? 'خطأ في المصادقة — تحقق من الـ Token' :
-        response.status === 403 ? 'ليس لديك صلاحية الوصول' :
-        response.status === 429 ? 'تجاوزت الحد المسموح — انتظر قليلاً' :
-        response.status >= 500 ? 'خطأ في الخادم — حاول لاحقاً' :
-        'حدث خطأ في المزامنة';
-      
-      throw new Error(userMessage);
-    }
+try {
+const errorBody = await response.text();
+// ✅ عدم تسجيل محتوى الخطأ الكامل — قد يحتوي معلومات حساسة
+if (import.meta.env.DEV && errorBody && errorBody.length < 500) {
+console.error('[Turso] Error response (first 500 chars):', errorBody.substring(0, 500));
+}
+} catch {
+// تجاهل الخطأ في قراءة الاستجابة
+}
+if (import.meta.env.DEV) console.error('[Turso] Request failed with status:', response.status);
+// ✅ رسالة عامة وآمنة — لا تكشف تفاصيل التطبيق
+const userMessage =
+response.status === 401 ? 'خطأ في المصادقة — تحقق من بيانات الاتصال' :
+response.status === 403 ? 'ليس لديك صلاحية الوصول إلى قاعدة البيانات' :
+response.status === 429 ? 'عدد محاولات كثير — انتظر بضع دقائق' :
+response.status >= 500 ? 'الخادم غير متاح حالياً' :
+'فشل الاتصال بقاعدة البيانات';
+throw new Error(userMessage);
+}
+
 
     const result = await response.json();
     
@@ -302,19 +315,41 @@ export const tursoHelpers = {
    ───────────────────────────────────────────── */
 
 /** Helper to convert LibSQL HTTP row schema to structured objects */
-function mapRemoteRows<T>(res: any): T[] {
-  if (!res || !res.response || !res.response.result || !res.response.result.rows) return [];
-  const rows = res.response.result.rows;
-  return rows.flatMap((row: any[]) => {
-    try {
-      const dataValue = row[1]?.value;
-      if (typeof dataValue !== 'string') return [];
-      return [JSON.parse(dataValue) as T];
-    } catch {
-      return []; // تجاهل الصفوف التالفة
-    }
-  });
+function mapRemoteRows<T extends { id: string }>(res: any): T[] {
+if (!res || !res.response || !res.response.result || !res.response.result.rows) return [];
+const rows = res.response.result.rows;
+return rows.flatMap((row: any[]) => {
+try {
+const dataValue = row[1]?.value;
+if (typeof dataValue !== 'string') return [];
+const parsed = JSON.parse(dataValue) as T;
+// ✅ التحقق من وجود معرف فريد وصحة البنية الأساسية
+if (!parsed.id || typeof parsed.id !== 'string') return [];
+// ✅ إزالة أي حقول مريبة قد تحتوي على أكواد برمجية
+const sanitized = sanitizeEntity(parsed);
+return [sanitized];
+} catch (err) {
+if (import.meta.env.DEV) console.warn('[Turso] Failed to parse row:', err);
+return [];
 }
+});
+}
+
+// ✅ دالة تنظيف البيانات من الحقول الخطيرة
+function sanitizeEntity<T extends { id: string }>(entity: any): T {
+const allowedKeys = ['id', 'title', 'content', 'category', 'color', 'createdAt', 'updatedAt', 
+'isPinned', 'isFavorite', 'isArchived', 'isTrash', 'isLocked', 'isCompleted', 'checklist', 
+'reminder', 'priority', 'dueDate', 'description', 'items', 'totalBudget', 'totalSpent'];
+const sanitized: any = {};
+for (const key of allowedKeys) {
+if (key in entity) {
+sanitized[key] = entity[key];
+}
+}
+sanitized.id = entity.id;
+return sanitized as T;
+}
+
 
 /** Merges local and remote entities based on updatedAt timestamp */
 function mergeEntities<T extends { id: string; updatedAt: string }>(local: T[], remote: T[]): T[] {

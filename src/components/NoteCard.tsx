@@ -277,7 +277,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
                 ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'p', 'br',
                                'ul', 'ol', 'li', 'h1', 'h2', 'h3',
                                'blockquote', 'code', 'pre', 'span'],
-                ALLOWED_ATTR: ['style', 'class'],
+                ALLOWED_ATTR: ['class'],
                 FORBID_TAGS: ['script', 'iframe', 'object', 'embed'],
                 FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
               })

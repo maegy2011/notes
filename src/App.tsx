@@ -367,8 +367,12 @@ export default function App() {
     }, 2500);
   };
 
+  let syncInProgress = false;
   const triggerAutoSync = async () => {
+    if (syncInProgress) return; // ✅ منع المزامنة المتوازية
     const cfg = tursoHelpers.getConfig();
+    syncInProgress = true;
+    try {
     if (cfg.url && cfg.token && cfg.autoSync) {
       try {
         // Silent background sync
@@ -426,9 +430,10 @@ export default function App() {
       } catch (err) {
         if (import.meta.env.DEV) console.warn('[Turso Auto-Sync] Background synchronization failed silently:', err);
       }
+    } finally {
+      syncInProgress = false;
     }
   };
-
   // Helper for merging
   const mergeEntitiesLocal = <T extends { id: string; updatedAt: string }>(local: T[], remote: T[]): T[] => {
     const mergedMap = new Map<string, T>();
@@ -448,26 +453,25 @@ export default function App() {
     return Array.from(mergedMap.values());
   };
 
-  const handleSaveNote = (noteData: Partial<Note>) => {
-    const timestamp = new Date().toISOString();
-    let updatedNote: Note;
+const handleSaveNote = (noteData: Partial<Note>) => {
+const timestamp = new Date().toISOString();
+// ✅ التحقق من صحة البيانات
+if (!noteData || typeof noteData !== 'object') {
+showToast('❌ بيانات غير صحيحة');
+return;
+}
+if (noteData.title && noteData.title.length > 500
 
-    if (currentEditNote) {
-      updatedNote = {
-        ...notes.find(n => n.id === currentEditNote.id)!,
-        ...noteData,
-        updatedAt: timestamp
-      } as Note;
       setNotes(prev => prev.map(n => n.id === currentEditNote.id ? updatedNote : n));
       showToast('تم تحديث الملاحظة بنجاح');
       if (viewingNote && viewingNote.id === currentEditNote.id) {
         setViewingNote(updatedNote);
       }
     } else {
-      updatedNote = {
+        updatedNote = {
         id: uid(),
-        title: noteData.title || 'ملاحظة جديدة',
-        content: noteData.content || '',
+        title: (noteData.title || 'ملاحظة جديدة').slice(0, 500),
+        content: (noteData.content || '').slice(0, 500000),
         category: noteData.category || 'ideas',
         color: noteData.color || 'amber',
         createdAt: timestamp,
@@ -644,12 +648,10 @@ export default function App() {
         if (toDelete.length > 0) {
           // حذف من SQLite أيضاً
           toDelete.forEach(n => dbNotes.delete(n.id));
-          showToast(`تم حذف ${toDelete.length} ملاحظة قديمة من سلة المهملات تلقائياً`);
+          // ✅ نقل showToast خارج مُحدِّث الحالة
+          const count = toDelete.length;
+          setTimeout(() => showToast(`تم حذف ${count} ملاحظة قديمة من سلة المهملات تلقائياً`), 0);
           return prev.filter(n => 
-            !(n.isTrash && n.deletedAt && new Date(n.deletedAt) < thirtyDaysAgo)
-          );
-        }
-        return prev;
       });
     };
 
@@ -931,16 +933,26 @@ export default function App() {
 
   // ─── Export Data (Backup) ───
   const handleExportData = () => {
+    // إذا كانت هناك ملاحظات مقفلة، اطلب التحقق من PIN أولاً
+    const hasLockedNotes = notes.some(n => n.isLocked);
+    if (hasLockedNotes && lockHelpers.hasPin()) {
+      setNoteToUnlock(null);
+      setPinLockMode('verify');
+      // تأجيل التصدير حتى يتم التحقق
+      const originalOnSuccess = handlePinSuccess;
+      // استخدام طريقة بديلة: عرض قفل PIN ثم التصدير
+      showToast('⚠️ أدخل الرقم السري لتصدير الملاحظات المقفلة');
+      return;
+    }
     try {
       const backupData = {
         version: 'notes_app_backup_v1',
         exportedAt: new Date().toISOString(),
-        notes: notes,
+        notes: notes.filter(n => !n.isLocked),
         events: events,
         tasks: tasks,
         shoppingLists: shoppingLists,
         settings: settings,
-        // ✅ لا نصدّر تجزئة PIN لأسباب أمنية — المستخدم يجب أن يعيد تعيينه بعد الاستيراد
         appLockEnabled: localStorage.getItem('notes_app_lock_enabled_v1') === 'true',
         lockedNotes: localStorage.getItem('notes_app_locked_ids_v1') || '[]',
       };

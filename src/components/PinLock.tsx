@@ -130,25 +130,41 @@ export const PinLock: React.FC<PinLockProps> = ({
 
   // ✅ توليد salt ثابت لهذا الجهاز
   const getDeviceSalt = (): string => {
-    let salt = localStorage.getItem(DEVICE_SALT_KEY);
-    if (!salt) {
-      salt = CryptoJS.lib.WordArray.random(16).toString();
-      localStorage.setItem(DEVICE_SALT_KEY, salt);
-    }
-    return salt;
-  };
+let salt = localStorage.getItem(DEVICE_SALT_KEY);
+if (!salt) {
+// ✅ استخدام Web Crypto API الآمن
+const randomBytes = crypto.getRandomValues(new Uint8Array(16));
+salt = Array.from(randomBytes)
+.map(b => b.toString(16).padStart(2, '0'))
+.join('');
+localStorage.setItem(DEVICE_SALT_KEY, salt);
+}
+return salt;
+};
 
-  // ✅ تجزئة آمنة للـ PIN
-  const hashPin = (pin: string): string => {
-    const salt = getDeviceSalt();
-    // PBKDF2 مع 100,000 تكرار — يُصعّب كسر القوة الغاشمة بشكل كبير
-    const key = CryptoJS.PBKDF2(pin, salt, {
-      keySize: 256 / 32,
-      iterations: 100000,
-      hasher: CryptoJS.algo.SHA256
-    });
-    return key.toString();
-  };
+const hashPin = async (pin: string): Promise<string> => {
+const salt = getDeviceSalt();
+const encoder = new TextEncoder();
+const pinData = encoder.encode(pin);
+const saltData = encoder.encode(salt);
+// ✅ الجمع بين PIN والملح
+const combined = new Uint8Array(pinData.length + saltData.length);
+combined.set(pinData, 0);
+combined.set(saltData, pinData.length);
+// ✅ استخدام Web Crypto API مع SHA-256 و PBKDF2
+const key = await crypto.subtle.deriveKey(
+{ name: 'PBKDF2', salt: saltData, iterations: 100000, hash: 'SHA-256' },
+await crypto.subtle.importKey('raw', pinData, 'PBKDF2', false, ['deriveBits']),
+{ name: 'HMAC', hash: 'SHA-256' },
+true,
+['sign', 'verify']
+);
+const exported = await crypto.subtle.exportKey('raw', key);
+return Array.from(new Uint8Array(exported))
+.map(b => b.toString(16).padStart(2, '0'))
+.join('');
+};
+
 
   // ✅ التحقق من PIN
   const verifyPin = (enteredPin: string, storedHash: string): boolean => {
@@ -182,7 +198,10 @@ export const PinLock: React.FC<PinLockProps> = ({
   const handleComplete = (enteredPin: string) => {
     if (mode === 'set') {
       if (!isConfirming) {
-        setFirstPin(hashPin(enteredPin));
+        hashPin(enteredPin).then(hash => {
+        setFirstPin(hash);
+        });
+
         setIsConfirming(true);
         setPin(Array(4).fill(''));
         setCurrentIndex(0);

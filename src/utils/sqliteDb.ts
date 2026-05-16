@@ -47,14 +47,32 @@ const persistToLocalStorage = () => {
 
 /** Load existing database from localStorage, or return null */
 const loadFromLocalStorage = (): Uint8Array | null => {
-  try {
-    const b64 = localStorage.getItem(DB_STORAGE_KEY);
-    if (b64) return base64ToUint8(b64);
-  } catch (err) {
-    console.error('[SQLite] Failed to load DB from storage:', err);
-  }
-  return null;
+try {
+const b64 = localStorage.getItem(DB_STORAGE_KEY);
+if (!b64 || typeof b64 !== 'string') return null;
+// ✅ التحقق من طول Base64 المعقول (أكبر من 100 بايت على الأقل)
+if (b64.length < 100) {
+console.warn('[SQLite] Stored database is suspiciously small, ignoring');
+return null;
+}
+// ✅ التحقق من صيغة Base64 الصحيحة
+if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64)) {
+console.error('[SQLite] Invalid Base64 format');
+return null;
+}
+const uint8 = base64ToUint8(b64);
+// ✅ التحقق من أن البيانات ليست فارغة وطول معقول
+if (uint8.length < 100) {
+console.warn('[SQLite] Loaded database is suspiciously small');
+return null;
+}
+return uint8;
+} catch (err) {
+console.error('[SQLite] Failed to load DB from storage:', err);
+return null;
+}
 };
+
 
 /* ─────────────────────────────────────────────
    Database Initialization
@@ -116,17 +134,35 @@ const validateTableName = (table: string): ValidTable => {
    This keeps SQL simple and avoids column-mismatch issues.
    ───────────────────────────────────────────── */
 const upsert = (table: string, id: string, entity: any) => {
-  validateTableName(table);
-  const d = getDb();
-  const json = JSON.stringify(entity);
-  const existing = d.exec(`SELECT id FROM ${table} WHERE id = ?`, [id]);
-  if (existing.length > 0 && existing[0].values.length > 0) {
-    d.run(`UPDATE ${table} SET data = ? WHERE id = ?`, [json, id]);
-  } else {
-    d.run(`INSERT INTO ${table} (id, data) VALUES (?, ?)`, [id, json]);
-  }
-  persistToLocalStorage();
+validateTableName(table);
+const d = getDb();
+// ✅ التحقق من صحة المعرف
+if (!id || typeof id !== 'string' || id.length === 0) {
+throw new Error('[SQLite] Invalid ID: must be non-empty string');
+}
+// ✅ التحقق من أن entity ليس null أو undefined
+if (!entity || typeof entity !== 'object') {
+throw new Error('[SQLite] Invalid entity: must be object');
+}
+// ✅ التحقق من أن JSON.stringify لا ينتج عنه string فارغة
+const json = JSON.stringify(entity);
+if (json.length === 0 || json === '{}') {
+throw new Error('[SQLite] Entity produced empty JSON');
+}
+try {
+const existing = d.exec(`SELECT id FROM ${table} WHERE id = ?`, [id]);
+if (existing.length > 0 && existing[0].values.length > 0) {
+d.run(`UPDATE ${table} SET data = ? WHERE id = ?`, [json, id]);
+} else {
+d.run(`INSERT INTO ${table} (id, data) VALUES (?, ?)`, [id, json]);
+}
+persistToLocalStorage();
+} catch (err) {
+console.error(`[SQLite] Upsert failed for table ${table}:`, err);
+throw new Error(`[SQLite] Failed to save data to ${table}`);
+}
 };
+
 
 const getAll = <T>(table: string): T[] => {
   validateTableName(table);
