@@ -114,19 +114,19 @@ export const PinLock: React.FC<PinLockProps> = ({
   }, [error]);
 
   const handleKeyPress = (digit: string) => {
-    if (currentIndex >= 4) return;
-    
-    const newPin = [...pin];
-    newPin[currentIndex] = digit;
-    setPin(newPin);
-    setCurrentIndex(currentIndex + 1);
+  if (currentIndex >= 4) return;
+  const newPin = [...pin];
+  newPin[currentIndex] = digit;
+  setPin(newPin);
+  setCurrentIndex(currentIndex + 1);
+  if (currentIndex === 3) {
+    setTimeout(async () => {
+      await handleComplete(newPin.join(''));
+    }, 250);
+  }
+};
 
-    if (currentIndex === 3) {
-      setTimeout(() => {
-        handleComplete(newPin.join(''));
-      }, 250);
-    }
-  };
+
 
   // ✅ توليد salt ثابت لهذا الجهاز
   const getDeviceSalt = (): string => {
@@ -167,24 +167,39 @@ return Array.from(new Uint8Array(exported))
 
 
   // ✅ التحقق من PIN
-  const verifyPin = (enteredPin: string, storedHash: string): boolean => {
-    const computedHash = hashPin(enteredPin);
-    // مقارنة ثابتة الزمن لمنع هجوم التوقيت
-    if (computedHash.length !== storedHash.length) return false;
-    let result = 0;
-    for (let i = 0; i < computedHash.length; i++) {
-      result |= computedHash.charCodeAt(i) ^ storedHash.charCodeAt(i);
-    }
-    return result === 0;
-  };
+  const verifyPin = async (enteredPin: string, storedHash: string): Promise<boolean> => {
+  const computedHash = await hashPin(enteredPin);
+// ✅ مقارنة آمنة — كلا الطول والمحتوى يجب أن يتطابقا
+const computedLen = computedHash.length;
+const storedLen = storedHash.length;
+// تجنب إرجاع false في الحال إذا كان الطول مختلفاً — استمر في المقارنة
+const maxLen = Math.max(computedLen, storedLen);
+if (maxLen === 0) return false; // كلاهما فارغ
+let result = 0;
+for (let i = 0; i < maxLen; i++) {
+  const c1 = i < computedLen ? computedHash.charCodeAt(i) : 0;
+  const c2 = i < storedLen ? storedHash.charCodeAt(i) : 0;
+  result |= c1 ^ c2;
+}
+return result === 0;
+
+  let result = 0;
+  for (let i = 0; i < computedHash.length; i++) {
+    result |= computedHash.charCodeAt(i) ^ storedHash.charCodeAt(i);
+  }
+  return result === 0;
+};
+
 
   const getStoredPinHash = (): string | null => {
     return localStorage.getItem(PIN_STORAGE_KEY);
   };
 
-  const savePinHash = (newPin: string) => {
-    localStorage.setItem(PIN_STORAGE_KEY, hashPin(newPin));
-  };
+  const savePinHash = async (newPin: string) => {
+  const hash = await hashPin(newPin);
+  localStorage.setItem(PIN_STORAGE_KEY, hash);
+};
+
 
   const handleDelete = () => {
     if (currentIndex === 0) return;
@@ -195,55 +210,53 @@ return Array.from(new Uint8Array(exported))
     setError(null);
   };
 
-  const handleComplete = (enteredPin: string) => {
-    if (mode === 'set') {
-      if (!isConfirming) {
-        hashPin(enteredPin).then(hash => {
-        setFirstPin(hash);
-        });
-
-        setIsConfirming(true);
+  const handleComplete = async (enteredPin: string) => {
+  if (mode === 'set') {
+    if (!isConfirming) {
+      const hash = await hashPin(enteredPin);
+      setFirstPin(hash);
+      setIsConfirming(true);
+      setPin(Array(4).fill(''));
+      setCurrentIndex(0);
+      showToast?.('أعد إدخال الرقم السري للتأكيد');
+      return;
+    } else {
+      const isMatch = await verifyPin(enteredPin, firstPin);
+      if (isMatch) {
+        await savePinHash(enteredPin);
+        showToast?.('✅ تم تعيين الرقم السري بنجاح');
+        onSuccess();
+      } else {
+        setError('الرقم السري غير متطابق! حاول مرة أخرى');
         setPin(Array(4).fill(''));
         setCurrentIndex(0);
-        showToast?.('أعد إدخال الرقم السري للتأكيد');
-        return;
-      } else {
-        if (verifyPin(enteredPin, firstPin)) {
-          savePinHash(enteredPin);
-          showToast?.('✅ تم تعيين الرقم السري بنجاح');
-          onSuccess();
-        } else {
-          setError('الرقم السري غير متطابق! حاول مرة أخرى');
-          setPin(Array(4).fill(''));
-          setCurrentIndex(0);
-          setFirstPin('');
-          setIsConfirming(false);
-        }
-        return;
+        setFirstPin('');
+        setIsConfirming(false);
       }
-    }
-
-    // unlock, verify, unlock_all, lock_all
-    if (lockoutRemaining > 0) {
-      setError(`محاولات كثيرة. انتظر ${Math.ceil(lockoutRemaining / 1000)} ثانية`);
-      setPin(Array(4).fill(''));
-      setCurrentIndex(0);
       return;
     }
+  }
+  // unlock, verify, unlock_all, lock_all
+  if (lockoutRemaining > 0) {
+    setError(`محاولات كثيرة. انتظر ${Math.ceil(lockoutRemaining / 1000)} ثانية`);
+    setPin(Array(4).fill(''));
+    setCurrentIndex(0);
+    return;
+  }
+  const storedHash = getStoredPinHash();
+  if (storedHash && (await verifyPin(enteredPin, storedHash))) {
+    resetFailedAttempts();
+    onSuccess();
+  } else {
+    recordFailedAttempt();
+    const attemptsLeft = MAX_PIN_ATTEMPTS - getFailedAttempts();
+    setError(attemptsLeft > 0 ? `الرقم السري غير صحيح! (متبقي ${attemptsLeft} محاولات)` : 'تم تجاوز الحد المسموح. انتظر...');
+    setPin(Array(4).fill(''));
+    setCurrentIndex(0);
+    showToast?.('❌ الرقم السري غير صحيح');
+  }
+};
 
-    const storedHash = getStoredPinHash();
-    if (storedHash && verifyPin(enteredPin, storedHash)) {
-      resetFailedAttempts();
-      onSuccess();
-    } else {
-      recordFailedAttempt();
-      const attemptsLeft = MAX_PIN_ATTEMPTS - getFailedAttempts();
-      setError(attemptsLeft > 0 ? `الرقم السري غير صحيح! (متبقي ${attemptsLeft} محاولات)` : 'تم تجاوز الحد المسموح. انتظر...');
-      setPin(Array(4).fill(''));
-      setCurrentIndex(0);
-      showToast?.('❌ الرقم السري غير صحيح');
-    }
-  };
 
   const getTitle = () => {
     switch (mode) {

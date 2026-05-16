@@ -460,9 +460,12 @@ if (!noteData || typeof noteData !== 'object') {
 showToast('❌ بيانات غير صحيحة');
 return;
 }
-if (noteData.title && noteData.title.length > 500
+if (noteData.title && noteData.title.length > 500) {
+  showToast('❌ عنوان الملاحظة طويل جداً (الحد الأقصى 500 حرف)');
+  return;
+}
+setNotes(prev => prev.map(n => n.id === currentEditNote.id ? updatedNote : n));
 
-      setNotes(prev => prev.map(n => n.id === currentEditNote.id ? updatedNote : n));
       showToast('تم تحديث الملاحظة بنجاح');
       if (viewingNote && viewingNote.id === currentEditNote.id) {
         setViewingNote(updatedNote);
@@ -646,13 +649,15 @@ if (noteData.title && noteData.title.length > 500
           n.isTrash && n.deletedAt && new Date(n.deletedAt) < thirtyDaysAgo
         );
         if (toDelete.length > 0) {
-          // حذف من SQLite أيضاً
-          toDelete.forEach(n => dbNotes.delete(n.id));
-          // ✅ نقل showToast خارج مُحدِّث الحالة
-          const count = toDelete.length;
-          setTimeout(() => showToast(`تم حذف ${count} ملاحظة قديمة من سلة المهملات تلقائياً`), 0);
-          return prev.filter(n => 
-      });
+  // حذف من SQLite أيضاً
+  toDelete.forEach(n => dbNotes.delete(n.id));
+  // ✅ نقل showToast خارج مُحدِّث الحالة
+  const count = toDelete.length;
+  setTimeout(() => showToast(`تم حذف ${count} ملاحظة قديمة من سلة المهملات تلقائياً`), 0);
+  return prev.filter(n => !n.isTrash || (n.deletedAt && new Date(n.deletedAt) >= thirtyDaysAgo));
+}
+return prev;
+
     };
 
     cleanupTrashedNotes();
