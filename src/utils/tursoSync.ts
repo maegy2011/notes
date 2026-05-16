@@ -83,8 +83,11 @@ export const tursoHelpers = {
     if (sanitized.startsWith('libsql://')) {
       sanitized = sanitized.replace('libsql://', 'https://');
     }
-    // Ensure HTTPS
-    if (!sanitized.startsWith('https://') && !sanitized.startsWith('http://')) {
+    // ✅ فرض HTTPS — لا نسمح بـ HTTP لإرسال التوكن
+    if (sanitized.startsWith('http://')) {
+      sanitized = sanitized.replace('http://', 'https://');
+    }
+    if (!sanitized.startsWith('https://')) {
       sanitized = 'https://' + sanitized;
     }
     if (sanitized.endsWith('/')) sanitized = sanitized.slice(0, -1);
@@ -126,9 +129,10 @@ export const tursoHelpers = {
     }, 10000); // ✅ 10 ثواني كحد أقصى
 
     if (!response.ok) {
-      const errText = await response.text();
-      // ✅ log تقني داخلي فقط
-      console.error('[Turso] Error:', response.status, errText);
+      // ✅ نقرأ الاستجابة لكن لا نسجّل تفاصيلها الحساسة
+      await response.text();
+      // ✅ log تقني داخلي فقط — بدون تفاصيل حساسة
+      console.error('[Turso] Error:', response.status);
       
       // ✅ رسالة عامة وآمنة للمستخدم
       const userMessage =

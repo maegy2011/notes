@@ -20,7 +20,7 @@ import { ShoppingView } from './components/ShoppingView';
 import { EnhancedFAB } from './components/EnhancedFAB';
 import {
   shareContent, formatNoteForShare, formatTaskForShare, formatEventForShare, formatShoppingListForShare,
-  duplicateNote, duplicateTask, duplicateEvent, duplicateShoppingList,
+  duplicateNote, duplicateTask, duplicateEvent, duplicateShoppingList, uid,
 } from './utils/shareDuplicate';
 import { initDatabase, dbNotes, dbEvents, dbTasks, dbShopping } from './utils/sqliteDb';
 import { tursoHelpers } from './utils/tursoSync';
@@ -145,7 +145,7 @@ export default function App() {
     } else {
       newEv = {
         ...(data as Omit<AppEvent, 'id' | 'createdAt' | 'updatedAt'>),
-        id: Date.now().toString(),
+        id: uid(),
         createdAt: now,
         updatedAt: now,
       };
@@ -202,7 +202,7 @@ export default function App() {
     } else {
       newT = {
         ...(data as Omit<AppTask, 'id' | 'createdAt' | 'updatedAt'>),
-        id: Date.now().toString(),
+        id: uid(),
         createdAt: now,
         updatedAt: now,
       };
@@ -465,7 +465,7 @@ export default function App() {
       }
     } else {
       updatedNote = {
-        id: Date.now().toString(),
+        id: uid(),
         title: noteData.title || 'ملاحظة جديدة',
         content: noteData.content || '',
         category: noteData.category || 'ideas',
@@ -619,13 +619,15 @@ export default function App() {
 
   // Empty trash completely
   const handleEmptyTrash = () => {
-    const trashedCount = notes.filter(n => n.isTrash).length;
-    if (trashedCount === 0) {
+    const trashedNotes = notes.filter(n => n.isTrash);
+    if (trashedNotes.length === 0) {
       showToast('سلة المهملات فارغة بالفعل');
       return;
     }
+    // حذف من SQLite أيضاً
+    trashedNotes.forEach(n => dbNotes.delete(n.id));
     setNotes(prev => prev.filter(n => !n.isTrash));
-    showToast(`تم تفريغ سلة المهملات (${trashedCount} ملاحظة محذوفة نهائياً)`);
+    showToast(`تم تفريغ سلة المهملات (${trashedNotes.length} ملاحظة محذوفة نهائياً)`);
   };
 
   // Auto-delete trashed notes after 30 days
@@ -675,11 +677,13 @@ export default function App() {
   };
 
   const handleResetData = () => {
+    dbNotes.replaceAll(INITIAL_NOTES);
     setNotes(INITIAL_NOTES);
     showToast('تمت استعادة الملاحظات التوضيحية');
   };
 
   const handleClearAll = () => {
+    dbNotes.clearAll();
     setNotes([]);
     showToast('تم مسح جميع الملاحظات');
   };
@@ -690,7 +694,9 @@ export default function App() {
     setNotes(prev => prev.map(n => {
       if (!n.isArchived && n.checklist && n.checklist.length > 0 && n.checklist.every(c => c.completed)) {
         archivedCount++;
-        return { ...n, isArchived: true, isPinned: false };
+        const updated = { ...n, isArchived: true, isPinned: false };
+        dbNotes.save(updated);
+        return updated;
       }
       return n;
     }));
@@ -709,7 +715,9 @@ export default function App() {
     setNotes(prev => prev.map(n => {
       if (!n.isArchived && !n.isPinned && new Date(n.updatedAt) < thirtyDaysAgo) {
         archivedCount++;
-        return { ...n, isArchived: true, isPinned: false };
+        const updated = { ...n, isArchived: true, isPinned: false };
+        dbNotes.save(updated);
+        return updated;
       }
       return n;
     }));
@@ -726,7 +734,9 @@ export default function App() {
     setNotes(prev => prev.map(n => {
       if (n.isArchived) {
         restoredCount++;
-        return { ...n, isArchived: false };
+        const updated = { ...n, isArchived: false };
+        dbNotes.save(updated);
+        return updated;
       }
       return n;
     }));
@@ -744,6 +754,8 @@ export default function App() {
       return;
     }
     setNotes(prev => prev.filter(n => !n.isArchived));
+    // حذف من SQLite أيضاً
+    archivedNotes.forEach(n => dbNotes.delete(n.id));
     showToast(`تم حذف ${archivedNotes.length} ملاحظة من الأرشيف نهائياً`);
   };
 
@@ -864,7 +876,9 @@ export default function App() {
 
   const handleDuplicateNote = (note: Note) => {
     if (note.isLocked) { showToast('⚠️ لا يمكن نسخ ملاحظة مقفلة'); return; }
-    setNotes(prev => [duplicateNote(note), ...prev]);
+    const dup = duplicateNote(note);
+    dbNotes.save(dup);
+    setNotes(prev => [dup, ...prev]);
     showToast('✅ تم إنشاء نسخة جديدة من الملاحظة');
   };
 
@@ -874,7 +888,9 @@ export default function App() {
   };
 
   const handleDuplicateTask = (task: AppTask) => {
-    setTasks(prev => [duplicateTask(task), ...prev]);
+    const dup = duplicateTask(task);
+    dbTasks.save(dup);
+    setTasks(prev => [dup, ...prev]);
     showToast('✅ تم إنشاء نسخة جديدة من المهمة');
   };
 
@@ -884,7 +900,9 @@ export default function App() {
   };
 
   const handleDuplicateEvent = (ev: AppEvent) => {
-    setEvents(prev => [duplicateEvent(ev), ...prev]);
+    const dup = duplicateEvent(ev);
+    dbEvents.save(dup);
+    setEvents(prev => [dup, ...prev]);
     showToast('✅ تم إنشاء نسخة جديدة من الحدث');
   };
 
@@ -896,7 +914,9 @@ export default function App() {
   const handleDuplicateShoppingList = (listId: string) => {
     const list = shoppingLists.find(l => l.id === listId);
     if (!list) return;
-    setShoppingLists(prev => [duplicateShoppingList(list), ...prev]);
+    const dup = duplicateShoppingList(list);
+    dbShopping.save(dup);
+    setShoppingLists(prev => [dup, ...prev]);
     showToast('✅ تم إنشاء نسخة جديدة من القائمة');
   };
 
@@ -911,7 +931,7 @@ export default function App() {
         tasks: tasks,
         shoppingLists: shoppingLists,
         settings: settings,
-        pin: localStorage.getItem('notes_app_pin_v1') || null,
+        // ✅ لا نصدّر تجزئة PIN لأسباب أمنية — المستخدم يجب أن يعيد تعيينه بعد الاستيراد
         appLockEnabled: localStorage.getItem('notes_app_lock_enabled_v1') === 'true',
         lockedNotes: localStorage.getItem('notes_app_locked_ids_v1') || '[]',
       };
@@ -986,27 +1006,28 @@ export default function App() {
           return;
         }
 
-        // 1. Notes
+        // 1. Notes — حفظ في SQLite
         if (Array.isArray(imported.notes)) {
+          dbNotes.replaceAll(imported.notes);
           setNotes(imported.notes);
         }
         
-        // 2. Events
+        // 2. Events — حفظ في SQLite
         if (Array.isArray(imported.events)) {
+          dbEvents.replaceAll(imported.events);
           setEvents(imported.events);
-          localStorage.setItem('notes_app_events_v1', JSON.stringify(imported.events));
         }
 
-        // 3. Tasks
+        // 3. Tasks — حفظ في SQLite
         if (Array.isArray(imported.tasks)) {
+          dbTasks.replaceAll(imported.tasks);
           setTasks(imported.tasks);
-          localStorage.setItem('notes_app_tasks_v1', JSON.stringify(imported.tasks));
         }
 
-        // 4. Shopping Lists
+        // 4. Shopping Lists — حفظ في SQLite
         if (Array.isArray(imported.shoppingLists)) {
+          dbShopping.replaceAll(imported.shoppingLists);
           setShoppingLists(imported.shoppingLists);
-          localStorage.setItem('notes_app_shopping_v1', JSON.stringify(imported.shoppingLists));
         }
 
         // 5. Settings
@@ -1014,20 +1035,14 @@ export default function App() {
           setSettings(imported.settings);
         }
 
-        // 6. Security & Pin configuration
-        if (imported.pin) {
-          localStorage.setItem('notes_app_pin_v1', imported.pin);
-        } else {
-          localStorage.removeItem('notes_app_pin_v1');
+        // 6. ✅ أمني: لا نستورد PIN من ملفات خارجية أبداً — يمكن أن يكون ضاراً
+        // المستخدم يجب أن يعيد تعيين الرقم السري يدوياً بعد الاستيراد
+        if (imported.pin || imported.appLockEnabled) {
+          showToast('⚠️ يجب إعادة تعيين الرقم السري من الإعدادات بعد الاستيراد');
         }
-
-        if (imported.appLockEnabled) {
-          localStorage.setItem('notes_app_lock_enabled_v1', 'true');
-          setAppLocked(true);
-        } else {
-          localStorage.setItem('notes_app_lock_enabled_v1', 'false');
-          setAppLocked(false);
-        }
+        // تأكد من أن قفل التطبيق معطل بعد الاستيراد حتى يعيد المستخدم تعيين PIN
+        localStorage.setItem('notes_app_lock_enabled_v1', 'false');
+        setAppLocked(false);
 
         if (imported.lockedNotes) {
           localStorage.setItem('notes_app_locked_ids_v1', imported.lockedNotes);

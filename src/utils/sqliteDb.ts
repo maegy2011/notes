@@ -97,11 +97,25 @@ const getDb = (): Database => {
 };
 
 /* ─────────────────────────────────────────────
+   Table name validation — prevents SQL injection
+   ───────────────────────────────────────────── */
+const VALID_TABLES = ['notes', 'events', 'tasks', 'shopping_lists', 'settings'] as const;
+type ValidTable = typeof VALID_TABLES[number];
+
+const validateTableName = (table: string): ValidTable => {
+  if (!VALID_TABLES.includes(table as ValidTable)) {
+    throw new Error(`[SQLite] Invalid table name: ${table}`);
+  }
+  return table as ValidTable;
+};
+
+/* ─────────────────────────────────────────────
    Generic JSON-blob CRUD helpers
    Each entity is stored as { id, data: JSON.stringify(entity) }
    This keeps SQL simple and avoids column-mismatch issues.
    ───────────────────────────────────────────── */
 const upsert = (table: string, id: string, entity: any) => {
+  validateTableName(table);
   const d = getDb();
   const json = JSON.stringify(entity);
   const existing = d.exec(`SELECT id FROM ${table} WHERE id = ?`, [id]);
@@ -114,6 +128,7 @@ const upsert = (table: string, id: string, entity: any) => {
 };
 
 const getAll = <T>(table: string): T[] => {
+  validateTableName(table);
   const d = getDb();
   const result = d.exec(`SELECT data FROM ${table}`);
   if (result.length === 0) return [];
@@ -121,12 +136,14 @@ const getAll = <T>(table: string): T[] => {
 };
 
 const deleteRow = (table: string, id: string) => {
+  validateTableName(table);
   const d = getDb();
   d.run(`DELETE FROM ${table} WHERE id = ?`, [id]);
   persistToLocalStorage();
 };
 
 const clearTable = (table: string) => {
+  validateTableName(table);
   const d = getDb();
   d.run(`DELETE FROM ${table}`);
   persistToLocalStorage();

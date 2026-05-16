@@ -1,6 +1,7 @@
 import React from 'react';
 import { Note } from '../types';
 import { CATEGORY_LABELS, COLOR_CLASSES } from '../data/initialNotes';
+import DOMPurify from 'dompurify';
 import {
   ArrowRight,
   Edit3,
@@ -256,7 +257,16 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
         {note.content && (
           <div
             className="text-xs text-slate-200 leading-relaxed font-normal select-text break-words bg-slate-900/40 p-4 rounded-2xl border border-slate-800/60 rich-text-view"
-            dangerouslySetInnerHTML={{ __html: note.content }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(note.content, {
+              ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'p', 'br',
+                             'ul', 'ol', 'li', 'h1', 'h2', 'h3',
+                             'blockquote', 'code', 'pre', 'span', 'del',
+                             'a', 'img'],
+              ALLOWED_ATTR: ['style', 'class', 'href', 'target', 'rel', 'src', 'alt'],
+              FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'textarea', 'button'],
+              FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur', 'onsubmit'],
+              ALLOW_DATA_ATTR: false,
+            }) }}
           />
         )}
 

@@ -196,6 +196,12 @@ function inlineFormat(s: string): string {
     .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em class="italic text-slate-200">$2</em>')
     // Code `text`
     .replace(/`([^`]+)`/g, '<code class="bg-slate-700/60 text-amber-300 px-1 py-0.5 rounded text-[10px] font-mono">$1</code>')
-    // Link [text](url)
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-sky-400 underline">$1</a>');
+    // Link [text](url) — ✅ التحقق من مخطط الروابط لمنع javascript: وغيرها
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, text: string, url: string) => {
+      const safeUrl = url.trim().toLowerCase();
+      if (safeUrl.startsWith('javascript:') || safeUrl.startsWith('data:') || safeUrl.startsWith('vbscript:')) {
+        return `<span class="text-rose-400 line-through">${text}</span>`;
+      }
+      return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-sky-400 underline">${text}</a>`;
+    });
 }

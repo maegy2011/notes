@@ -6,6 +6,10 @@ const PIN_STORAGE_KEY = 'notes_app_pin_hash_v1';
 const DEVICE_SALT_KEY = '_app_salt';
 const APP_LOCK_KEY = 'notes_app_lock_enabled_v1';
 const LOCKED_NOTES_KEY = 'notes_app_locked_ids_v1';
+const PIN_ATTEMPTS_KEY = 'notes_app_pin_attempts_v1';
+const PIN_LOCKOUT_KEY = 'notes_app_pin_lockout_v1';
+const MAX_PIN_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 60_000; // دقيقة واحدة
 
 interface PinLockProps {
   mode: 'set' | 'unlock' | 'verify' | 'unlock_all' | 'lock_all';
@@ -29,13 +33,74 @@ export const PinLock: React.FC<PinLockProps> = ({
   const [firstPin, setFirstPin] = useState<string>('');
   const [isConfirming, setIsConfirming] = useState(false);
   const [shakeError, setShakeError] = useState(false);
+  const [lockoutRemaining, setLockoutRemaining] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const lockoutTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus();
     }
+    // Check if currently in lockout period
+    checkLockout();
+    return () => {
+      if (lockoutTimerRef.current) clearInterval(lockoutTimerRef.current);
+    };
   }, []);
+
+  const checkLockout = () => {
+    const lockoutUntil = localStorage.getItem(PIN_LOCKOUT_KEY);
+    if (lockoutUntil) {
+      const remaining = parseInt(lockoutUntil) - Date.now();
+      if (remaining > 0) {
+        setLockoutRemaining(remaining);
+        startLockoutTimer(parseInt(lockoutUntil));
+      } else {
+        clearLockout();
+      }
+    }
+  };
+
+  const startLockoutTimer = (untilMs: number) => {
+    if (lockoutTimerRef.current) clearInterval(lockoutTimerRef.current);
+    lockoutTimerRef.current = setInterval(() => {
+      const remaining = untilMs - Date.now();
+      if (remaining <= 0) {
+        setLockoutRemaining(0);
+        clearLockout();
+        if (lockoutTimerRef.current) clearInterval(lockoutTimerRef.current);
+      } else {
+        setLockoutRemaining(remaining);
+      }
+    }, 1000);
+  };
+
+  const recordFailedAttempt = () => {
+    const attempts = getFailedAttempts() + 1;
+    localStorage.setItem(PIN_ATTEMPTS_KEY, attempts.toString());
+    if (attempts >= MAX_PIN_ATTEMPTS) {
+      const lockoutUntil = Date.now() + LOCKOUT_DURATION_MS;
+      localStorage.setItem(PIN_LOCKOUT_KEY, lockoutUntil.toString());
+      setLockoutRemaining(LOCKOUT_DURATION_MS);
+      startLockoutTimer(lockoutUntil);
+      showToast?.(`تم تجاوز الحد المسموح. انتظر دقيقة واحدة`);
+    }
+  };
+
+  const resetFailedAttempts = () => {
+    localStorage.removeItem(PIN_ATTEMPTS_KEY);
+    clearLockout();
+  };
+
+  const getFailedAttempts = (): number => {
+    const val = localStorage.getItem(PIN_ATTEMPTS_KEY);
+    return val ? parseInt(val) : 0;
+  };
+
+  const clearLockout = () => {
+    localStorage.removeItem(PIN_LOCKOUT_KEY);
+    localStorage.removeItem(PIN_ATTEMPTS_KEY);
+  };
 
   useEffect(() => {
     if (error) {
@@ -127,11 +192,21 @@ export const PinLock: React.FC<PinLockProps> = ({
     }
 
     // unlock, verify, unlock_all, lock_all
+    if (lockoutRemaining > 0) {
+      setError(`محاولات كثيرة. انتظر ${Math.ceil(lockoutRemaining / 1000)} ثانية`);
+      setPin(Array(4).fill(''));
+      setCurrentIndex(0);
+      return;
+    }
+
     const storedHash = getStoredPinHash();
     if (storedHash && verifyPin(enteredPin, storedHash)) {
+      resetFailedAttempts();
       onSuccess();
     } else {
-      setError('الرقم السري غير صحيح!');
+      recordFailedAttempt();
+      const attemptsLeft = MAX_PIN_ATTEMPTS - getFailedAttempts();
+      setError(attemptsLeft > 0 ? `الرقم السري غير صحيح! (متبقي ${attemptsLeft} محاولات)` : 'تم تجاوز الحد المسموح. انتظر...');
       setPin(Array(4).fill(''));
       setCurrentIndex(0);
       showToast?.('❌ الرقم السري غير صحيح');

@@ -274,7 +274,15 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
       case 'quote': document.execCommand('formatBlock', false, '<blockquote>'); break;
       case 'link': {
         const url = prompt('أدخل عنوان الرابط الإلكتروني (URL):', 'https://');
-        if (url) document.execCommand('createLink', false, url);
+        if (url) {
+          // ✅ التحقق من مخطط الرابط لمنع javascript: URLs
+          const lowerUrl = url.trim().toLowerCase();
+          if (lowerUrl.startsWith('javascript:') || lowerUrl.startsWith('data:') || lowerUrl.startsWith('vbscript:')) {
+            showToast('❌ مخطط الرابط غير مسموح به لأسباب أمنية');
+          } else {
+            document.execCommand('createLink', false, url);
+          }
+        }
         break;
       }
     }
