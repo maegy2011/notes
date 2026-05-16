@@ -83,7 +83,9 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
 
   const handleCopy = () => {
     const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = note.content;
+    tempDiv.innerHTML = DOMPurify.sanitize(note.content, {
+      ALLOWED_TAGS: [], ALLOWED_ATTR: [],
+    });
     let text = `${note.title}\n\n${tempDiv.textContent || tempDiv.innerText || ''}`;
     if (note.reminder?.datetime) {
       text += `\n\n⏰ ${note.reminder.type === 'event' ? 'الحدث' : 'التذكير'}: ${formatReminder(note.reminder.datetime)}`;
@@ -99,7 +101,9 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
 
   const handleShare = () => {
     const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = note.content;
+    tempDiv.innerHTML = DOMPurify.sanitize(note.content, {
+      ALLOWED_TAGS: [], ALLOWED_ATTR: [],
+    });
     if (navigator.share) {
       navigator.share({
         title: note.title,
@@ -257,14 +261,17 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
         {note.content && (
           <div
             className="text-xs text-slate-200 leading-relaxed font-normal select-text break-words bg-slate-900/40 p-4 rounded-2xl border border-slate-800/60 rich-text-view"
-            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(note.content, {
+             dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(note.content, {
               ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'p', 'br',
                              'ul', 'ol', 'li', 'h1', 'h2', 'h3',
-                             'blockquote', 'code', 'pre', 'span', 'del',
-                             'a', 'img'],
-              ALLOWED_ATTR: ['style', 'class', 'href', 'target', 'rel', 'src', 'alt'],
-              FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'textarea', 'button'],
-              FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur', 'onsubmit'],
+                             'blockquote', 'code', 'pre', 'span', 'del'],
+              // ✅ أزلنا: 'a', 'img' — يمنع التتبع والروابط الخطيرة
+              ALLOWED_ATTR: ['style', 'class'],
+              // ✅ أزلنا: 'href', 'target', 'rel', 'src', 'alt'
+              FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form',
+                            'input', 'textarea', 'button', 'a', 'img'],
+              FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover',
+                            'onfocus', 'onblur', 'onsubmit', 'href', 'src'],
               ALLOW_DATA_ATTR: false,
             }) }}
           />

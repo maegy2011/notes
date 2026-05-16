@@ -42,3 +42,11 @@ Thumbs.db
 .cache
 .parcel-cache
 .eslintcache
+
+# Security & sensitive files
+SECURITY_AUDIT_REPORT.md
+SECURITY_*.md
+.env
+.env.*
+*.pem
+*.key

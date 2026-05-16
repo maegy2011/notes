@@ -71,10 +71,11 @@ export const initDatabase = async (): Promise<Database> => {
   const existingData = loadFromLocalStorage();
   if (existingData) {
     db = new SQL.Database(existingData);
-    console.log('[SQLite] Loaded existing database from localStorage');
+    // لا تسجّل في الإنتاج
+    if (import.meta.env.DEV) console.log('[SQLite] Loaded existing database');
   } else {
     db = new SQL.Database();
-    console.log('[SQLite] Created fresh database');
+    if (import.meta.env.DEV) console.log('[SQLite] Created fresh database');
   }
 
   const d = db!;

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Note } from '../types';
 import { CATEGORY_LABELS, COLOR_CLASSES } from '../data/initialNotes';
+import DOMPurify from 'dompurify';
 import {
   Pin,
   Star,
@@ -268,9 +269,19 @@ export const NoteCard: React.FC<NoteCardProps> = ({
             <span>ملاحظة مقفلة - اضغط لإدخال الرقم السري</span>
           </div>
         ) : note.content ? (
+
           <div
             className={`${currentFontSize} text-slate-300 ${contentLineClamp} leading-relaxed font-light overflow-hidden rich-text-preview`}
-            dangerouslySetInnerHTML={{ __html: note.content }}
+            dangerouslySetInnerHTML={{
+              __html: DOMPurify.sanitize(note.content, {
+                ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'p', 'br',
+                               'ul', 'ol', 'li', 'h1', 'h2', 'h3',
+                               'blockquote', 'code', 'pre', 'span'],
+                ALLOWED_ATTR: ['style', 'class'],
+                FORBID_TAGS: ['script', 'iframe', 'object', 'embed'],
+                FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
+              })
+            }}
           />
         ) : totalItems === 0 ? (
           <span className="italic text-slate-500 text-[10px]">فارغة...</span>

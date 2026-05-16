@@ -103,8 +103,9 @@ export const StatsView: React.FC<StatsViewProps> = ({
       const config: TursoConfig = { url: sanitized, token: tursoToken, autoSync: tursoAutoSync };
       await tursoHelpers.syncNow(config, showToast);
     } catch (err) {
-      // Toast is already handled inside syncNow on error, but fallback:
-      console.error('[Turso Sync Error]', err);
+      if (import.meta.env.DEV) {
+        console.error('[Turso Sync Error]', err);
+      }
     } finally {
       setIsSyncing(false);
     }

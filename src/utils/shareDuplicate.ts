@@ -24,12 +24,10 @@ const fmtDateTime = (iso?: string): string => {
   });
 };
 
-// ✅ UID آمن باستخدام Web Crypto API
 export const uid = (): string => {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
-  // ✅ fallback آمن
   const arr = new Uint8Array(16);
   crypto.getRandomValues(arr);
   return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');

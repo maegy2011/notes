@@ -117,14 +117,14 @@ export default function App() {
                   setTasks(dbTasks.getAll());
                   setShoppingLists(dbShopping.getAll());
                 } catch (err) {
-                  if (import.meta.env.DEV) console.warn('[Turso Sync On Launch] Failed background sync:', err);
+                  console.warn('[Turso Sync On Launch] Failed background sync:', err);
                 }
               })();
             }
           }
         }
       } catch (err) {
-        if (import.meta.env.DEV) console.error('[Boot Sync Error]', err);
+        console.error('[Boot Sync Error]', err);
       }
     };
     bootDatabase();
@@ -424,7 +424,7 @@ export default function App() {
           await tursoHelpers.executeBatch(cfg, uploadStatements);
         }
       } catch (err) {
-        if (import.meta.env.DEV) console.warn('[Turso Auto-Sync] Background synchronization failed silently:', err);
+        console.warn('[Turso Auto-Sync] Background synchronization failed silently:', err);
       }
     }
   };
@@ -951,7 +951,7 @@ export default function App() {
       
       showToast('✅ تم تصدير النسخة الاحتياطية بنجاح');
     } catch (error) {
-      if (import.meta.env.DEV) console.error('Export failed', error);
+      console.error('Export failed', error);
       showToast('❌ فشل تصدير البيانات');
     }
   };
@@ -1061,7 +1061,7 @@ export default function App() {
 
         showToast('✅ تم استيراد وتحديث البيانات بالكامل بنجاح!');
       } catch (err) {
-        if (import.meta.env.DEV) console.error('Import failed', err);
+        console.error('Import failed', err);
         showToast('❌ فشل قراءة ملف الاستيراد');
       }
     };

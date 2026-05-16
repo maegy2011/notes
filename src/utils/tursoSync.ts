@@ -290,9 +290,14 @@ export const tursoHelpers = {
 function mapRemoteRows<T>(res: any): T[] {
   if (!res || !res.response || !res.response.result || !res.response.result.rows) return [];
   const rows = res.response.result.rows;
-  return rows.map((row: any[]) => {
-    const dataValue = row[1]?.value;
-    return JSON.parse(dataValue) as T;
+  return rows.flatMap((row: any[]) => {
+    try {
+      const dataValue = row[1]?.value;
+      if (typeof dataValue !== 'string') return [];
+      return [JSON.parse(dataValue) as T];
+    } catch {
+      return []; // تجاهل الصفوف التالفة
+    }
   });
 }
 

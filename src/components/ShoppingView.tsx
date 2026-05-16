@@ -49,7 +49,7 @@ const LIST_COLORS: { id: ShopListColor; bg: string; ring: string; chip: string }
 const getCatMeta = (id: ShopCategory) => SHOP_CATEGORIES.find(c => c.id === id) ?? SHOP_CATEGORIES[SHOP_CATEGORIES.length-1];
 const getListColor = (id: ShopListColor) => LIST_COLORS.find(c => c.id === id) ?? LIST_COLORS[0];
 
-const uid = () => Date.now().toString() + Math.random().toString(36).slice(2, 7);
+import { uid } from '../utils/shareDuplicate';
 
 /* ─── Props ─── */
 interface ShoppingViewProps {

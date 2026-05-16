@@ -235,8 +235,12 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
   };
 
   const handleCopy = () => {
+    // ✅ تعقيم أولاً ثم استخراج النص
     const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = content;
+    tempDiv.innerHTML = DOMPurify.sanitize(content, {
+      ALLOWED_TAGS: [],
+      ALLOWED_ATTR: [],
+    });
     let plainText = tempDiv.textContent || tempDiv.innerText || '';
 
     let copyText = `${title}\n\n${plainText}`;
@@ -754,7 +758,10 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
               onClick={() => {
                 if (navigator.share) {
                   const tempDiv = document.createElement('div');
-                  tempDiv.innerHTML = content;
+                  tempDiv.innerHTML = DOMPurify.sanitize(content, {
+                    ALLOWED_TAGS: [],
+                    ALLOWED_ATTR: [],
+                  });
                   navigator.share({
                     title: title,
                     text: tempDiv.textContent || tempDiv.innerText || ''
