@@ -141,12 +141,25 @@ export const PinLock: React.FC<PinLockProps> = ({
   // ✅ تجزئة آمنة للـ PIN
   const hashPin = (pin: string): string => {
     const salt = getDeviceSalt();
-    return CryptoJS.SHA256(pin + salt).toString();
+    // PBKDF2 مع 100,000 تكرار — يُصعّب كسر القوة الغاشمة بشكل كبير
+    const key = CryptoJS.PBKDF2(pin, salt, {
+      keySize: 256 / 32,
+      iterations: 100000,
+      hasher: CryptoJS.algo.SHA256
+    });
+    return key.toString();
   };
 
   // ✅ التحقق من PIN
   const verifyPin = (enteredPin: string, storedHash: string): boolean => {
-    return hashPin(enteredPin) === storedHash;
+    const computedHash = hashPin(enteredPin);
+    // مقارنة ثابتة الزمن لمنع هجوم التوقيت
+    if (computedHash.length !== storedHash.length) return false;
+    let result = 0;
+    for (let i = 0; i < computedHash.length; i++) {
+      result |= computedHash.charCodeAt(i) ^ storedHash.charCodeAt(i);
+    }
+    return result === 0;
   };
 
   const getStoredPinHash = (): string | null => {

@@ -198,10 +198,12 @@ function inlineFormat(s: string): string {
     .replace(/`([^`]+)`/g, '<code class="bg-slate-700/60 text-amber-300 px-1 py-0.5 rounded text-[10px] font-mono">$1</code>')
     // Link [text](url) — ✅ التحقق من مخطط الروابط لمنع javascript: وغيرها
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, text: string, url: string) => {
-      const safeUrl = url.trim().toLowerCase();
-      if (safeUrl.startsWith('javascript:') || safeUrl.startsWith('data:') || safeUrl.startsWith('vbscript:')) {
+            const safeUrl = url.trim().toLowerCase();
+      // قائمة بيضاء: السماح بـ http و https و mailto و tel فقط
+      if (!safeUrl.startsWith('http://') && !safeUrl.startsWith('https://') && !safeUrl.startsWith('mailto:') && !safeUrl.startsWith('tel:')) {
         return `<span class="text-rose-400 line-through">${text}</span>`;
       }
+      
       return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-sky-400 underline">${text}</a>`;
     });
 }

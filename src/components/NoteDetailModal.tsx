@@ -261,17 +261,15 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
         {note.content && (
           <div
             className="text-xs text-slate-200 leading-relaxed font-normal select-text break-words bg-slate-900/40 p-4 rounded-2xl border border-slate-800/60 rich-text-view"
-             dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(note.content, {
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(note.content, {
               ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'p', 'br',
                              'ul', 'ol', 'li', 'h1', 'h2', 'h3',
                              'blockquote', 'code', 'pre', 'span', 'del'],
-              // ✅ أزلنا: 'a', 'img' — يمنع التتبع والروابط الخطيرة
-              ALLOWED_ATTR: ['style', 'class'],
-              // ✅ أزلنا: 'href', 'target', 'rel', 'src', 'alt'
+              ALLOWED_ATTR: ['class'],  // إزالة 'style' — يمنع CSS Injection
               FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form',
-                            'input', 'textarea', 'button', 'a', 'img'],
+                            'input', 'textarea', 'button', 'a', 'img', 'style'],
               FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover',
-                            'onfocus', 'onblur', 'onsubmit', 'href', 'src'],
+                            'onfocus', 'onblur', 'onsubmit', 'href', 'src', 'style'],
               ALLOW_DATA_ATTR: false,
             }) }}
           />

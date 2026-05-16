@@ -52,25 +52,40 @@ const fetchWithTimeout = async (
 };
 
 export const tursoHelpers = {
-  getConfig: (): TursoConfig => {
+    getConfig: (): TursoConfig => {
     try {
-      // ✅ الإعدادات من localStorage بدون التوكن
       const data = localStorage.getItem(CONFIG_KEY);
       const cfg = data ? JSON.parse(data) : { url: '', autoSync: false };
-      // ✅ التوكن من sessionStorage فقط (يُمسح عند إغلاق المتصفح)
-      const token = sessionStorage.getItem(TOKEN_SESSION_KEY) || '';
+      // التحقق من انتهاء صلاحية التوكن
+      let token = '';
+      const tokenRaw = sessionStorage.getItem(TOKEN_SESSION_KEY);
+      if (tokenRaw) {
+        try {
+          const tokenData = JSON.parse(tokenRaw);
+          if (tokenData.expiresAt && Date.now() < tokenData.expiresAt) {
+            token = tokenData.value;
+          } else {
+            sessionStorage.removeItem(TOKEN_SESSION_KEY);
+          }
+        } catch {
+          sessionStorage.removeItem(TOKEN_SESSION_KEY);
+        }
+      }
       return { ...cfg, token };
     } catch {}
     return { url: '', token: '', autoSync: false };
   },
 
-  saveConfig: (cfg: TursoConfig) => {
-    // ✅ احفظ الإعدادات بدون التوكن في localStorage
+    saveConfig: (cfg: TursoConfig) => {
     const { token, ...safeConfig } = cfg;
     localStorage.setItem(CONFIG_KEY, JSON.stringify(safeConfig));
-    // ✅ التوكن في sessionStorage فقط
     if (token) {
-      sessionStorage.setItem(TOKEN_SESSION_KEY, token);
+      // تخزين التوكن مع طابع زمني لانتهاء الصلاحية (8 ساعات)
+      const tokenData = JSON.stringify({
+        value: token,
+        expiresAt: Date.now() + 8 * 60 * 60 * 1000
+      });
+      sessionStorage.setItem(TOKEN_SESSION_KEY, tokenData);
     }
   },
 
@@ -132,7 +147,7 @@ export const tursoHelpers = {
       // ✅ نقرأ الاستجابة لكن لا نسجّل تفاصيلها الحساسة
       await response.text();
       // ✅ log تقني داخلي فقط — بدون تفاصيل حساسة
-      console.error('[Turso] Error:', response.status);
+      if (import.meta.env.DEV) console.error('[Turso] Error:', response.status);
       
       // ✅ رسالة عامة وآمنة للمستخدم
       const userMessage =

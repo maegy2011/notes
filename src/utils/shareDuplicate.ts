@@ -28,8 +28,11 @@ export const uid = (): string => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
+  // Fallback متوافق مع UUID v4
   const arr = new Uint8Array(16);
   crypto.getRandomValues(arr);
+  arr[6] = (arr[6] & 0x0f) | 0x40; // الإصدار 4
+  arr[8] = (arr[8] & 0x3f) | 0x80; // المتغير 10
   return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
 };
 

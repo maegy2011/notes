@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Note, NoteCategory, NoteColor, ChecklistItem, ReminderData, ReminderType } from '../types';
 import { CATEGORY_LABELS, COLOR_CLASSES } from '../data/initialNotes';
 import DOMPurify from 'dompurify';
+import { uid } from '../utils/shareDuplicate';
 import {
   ArrowRight,
   Check,
@@ -134,13 +135,13 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
   useEffect(() => {
     if (editorRef.current) {
       // ✅ تعقيم HTML قبل الإدراج لمنع XSS
-      const sanitized = DOMPurify.sanitize(content, {
+        const sanitized = DOMPurify.sanitize(content, {
         ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'p', 'br',
                        'ul', 'ol', 'li', 'h1', 'h2', 'h3',
-                       'blockquote', 'code', 'pre', 'span'],
-        ALLOWED_ATTR: ['style', 'class'],
-        FORBID_TAGS: ['script', 'iframe', 'object', 'embed'],
-        FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
+                       'blockquote', 'code', 'pre', 'span', 'a'],
+        ALLOWED_ATTR: ['class', 'href', 'target', 'rel'],
+        FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'style'],
+        FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'style'],
       });
       editorRef.current.innerHTML = sanitized;
     }
@@ -174,7 +175,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
     setChecklist([
       ...checklist,
       {
-        id: Date.now().toString(),
+        id: uid(),
         text: newChecklistItem.trim(),
         completed: false,
       },

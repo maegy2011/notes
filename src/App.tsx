@@ -631,29 +631,33 @@ export default function App() {
   };
 
   // Auto-delete trashed notes after 30 days
-  useEffect(() => {
+    useEffect(() => {
     const cleanupTrashedNotes = () => {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       
-      const notesToDelete = notes.filter(n => 
-        n.isTrash && n.deletedAt && new Date(n.deletedAt) < thirtyDaysAgo
-      );
-      
-      if (notesToDelete.length > 0) {
-        setNotes(prev => prev.filter(n => 
-          !(n.isTrash && n.deletedAt && new Date(n.deletedAt) < thirtyDaysAgo)
-        ));
-        showToast(`تم حذف ${notesToDelete.length} ملاحظة قديمة من سلة المهملات تلقائياً`);
-      }
+      // استخدام دالة updater بدلاً من الاعتماد على state الخارجي
+      setNotes(prev => {
+        const toDelete = prev.filter(n => 
+          n.isTrash && n.deletedAt && new Date(n.deletedAt) < thirtyDaysAgo
+        );
+        if (toDelete.length > 0) {
+          // حذف من SQLite أيضاً
+          toDelete.forEach(n => dbNotes.delete(n.id));
+          showToast(`تم حذف ${toDelete.length} ملاحظة قديمة من سلة المهملات تلقائياً`);
+          return prev.filter(n => 
+            !(n.isTrash && n.deletedAt && new Date(n.deletedAt) < thirtyDaysAgo)
+          );
+        }
+        return prev;
+      });
     };
 
-    // Run cleanup on mount and daily
     cleanupTrashedNotes();
-    const interval = setInterval(cleanupTrashedNotes, 24 * 60 * 60 * 1000); // 24 hours
+    const interval = setInterval(cleanupTrashedNotes, 24 * 60 * 60 * 1000);
     
     return () => clearInterval(interval);
-  }, [notes]);
+  }, []); // مصفوفة تبعيات فارغة — يعمل مرة واحدة فقط عند التركيب
 
   const handleToggleChecklistItem = (noteId: string, itemId: string) => {
     setNotes(prev =>
@@ -838,7 +842,12 @@ export default function App() {
   };
 
   // After successful PIN unlock - show the note or lock it
-  const handlePinSuccess = () => {
+  
+    const handlePinSuccess = () => {
+    // تحديث حالة قفل التطبيق عند نجاح التحقق
+    if (pinLockMode === 'verify' && !noteToUnlock) {
+      setAppLocked(false);
+    }
     if (pinLockMode === 'unlock' && noteToUnlock) {
       setViewingNote(noteToUnlock);
       setNoteToUnlock(null);
@@ -957,7 +966,7 @@ export default function App() {
   };
 
   // ─── Validate Import Data ───
-  const validateImportData = (data: unknown): boolean => {
+    const validateImportData = (data: unknown): boolean => {
     if (!data || typeof data !== 'object') return false;
     const d = data as Record<string, unknown>;
     
@@ -965,10 +974,27 @@ export default function App() {
     if (d.notes !== undefined && !Array.isArray(d.notes)) return false;
     if (d.tasks !== undefined && !Array.isArray(d.tasks)) return false;
     if (d.events !== undefined && !Array.isArray(d.events)) return false;
+    if (d.shoppingLists !== undefined && !Array.isArray(d.shoppingLists)) return false;
+    
+    // تحقق من الحقول المطلوبة في كل ملاحظة
+    if (Array.isArray(d.notes)) {
+      for (const note of d.notes) {
+        if (!note || typeof note !== 'object') return false;
+        if (typeof (note as any).id !== 'string') return false;
+        if (typeof (note as any).title !== 'string') return false;
+      }
+    }
+    
+    // حد أقصى لعدد العناصر لمنع هجمات الذاكرة
+    const totalItems = (Array.isArray(d.notes) ? d.notes.length : 0)
+      + (Array.isArray(d.events) ? d.events.length : 0)
+      + (Array.isArray(d.tasks) ? d.tasks.length : 0)
+      + (Array.isArray(d.shoppingLists) ? d.shoppingLists.length : 0);
+    if (totalItems > 50000) return false;
     
     // حد أقصى معقول للحجم
     const jsonSize = JSON.stringify(data).length;
-    if (jsonSize > 10 * 1024 * 1024) return false; // 10MB كحد أقصى
+    if (jsonSize > 10 * 1024 * 1024) return false;
     
     return true;
   };
@@ -1031,8 +1057,18 @@ export default function App() {
         }
 
         // 5. Settings
-        if (imported.settings) {
-          setSettings(imported.settings);
+                // 5. Settings — تحقق من البنية قبل التطبيق
+        if (imported.settings && typeof imported.settings === 'object') {
+          const safeSettings: AppSettings = {
+            syncOnLaunch: typeof imported.settings.syncOnLaunch === 'boolean' ? imported.settings.syncOnLaunch : true,
+            defaultScreen: ['notes', 'tasks', 'shopping', 'calendar', 'settings'].includes(imported.settings.defaultScreen) ? imported.settings.defaultScreen : 'notes',
+            defaultColor: ['amber', 'emerald', 'sky', 'rose', 'purple', 'slate'].includes(imported.settings.defaultColor) ? imported.settings.defaultColor : 'amber',
+            defaultFontType: ['cairo', 'monospace', 'sans-serif', 'serif'].includes(imported.settings.defaultFontType) ? imported.settings.defaultFontType : 'cairo',
+            defaultFontSize: ['sm', 'base', 'lg', 'xl'].includes(imported.settings.defaultFontSize) ? imported.settings.defaultFontSize : 'base',
+            listItemHeight: ['normal', 'small', 'tiny'].includes(imported.settings.listItemHeight) ? imported.settings.listItemHeight : 'normal',
+            defaultSortOrder: ['updatedAt', 'createdAt', 'color', 'title', 'reminder', 'last-used'].includes(imported.settings.defaultSortOrder) ? imported.settings.defaultSortOrder : 'updatedAt',
+          };
+          setSettings(safeSettings);
         }
 
         // 6. ✅ أمني: لا نستورد PIN من ملفات خارجية أبداً — يمكن أن يكون ضاراً
@@ -1045,19 +1081,10 @@ export default function App() {
         setAppLocked(false);
 
         // ✅ تحقق من أن lockedNotes مصفوفة سليمة من strings
-        if (imported.lockedNotes) {
-          try {
-            const lockedIds = typeof imported.lockedNotes === 'string'
-              ? JSON.parse(imported.lockedNotes)
-              : imported.lockedNotes;
-            if (Array.isArray(lockedIds) &&
-                lockedIds.every((id: unknown) => typeof id === 'string' && id.length < 100)) {
-              localStorage.setItem('notes_app_locked_ids_v1', JSON.stringify(lockedIds));
-            }
-          } catch {
-            // تجاهل lockedNotes غير الصالح
-          }
-        }
+                // ✅ أمني: لا نستورد lockedNotes من ملفات خارجية — يمكن استخدامه لحجب الوصول
+        // المستخدم يجب أن يعيد قفل الملاحظات يدوياً بعد الاستيراد
+        // مسح أي قفل حالي لضمان الوصول
+        localStorage.removeItem('notes_app_locked_ids_v1');
 
         showToast('✅ تم استيراد وتحديث البيانات بالكامل بنجاح!');
       } catch (err) {
