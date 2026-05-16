@@ -240,7 +240,12 @@ throw new Error(userMessage);
         { sql: 'SELECT id, data FROM shopping_lists' }
       ]);
 
-      const remoteNotes = mapRemoteRows<Note>(downloadResult.results[0]);
+      // ✅ مع تحقق إضافي من السلامة
+      const remoteNotes = mapRemoteRows<Note>(downloadResult.results[0]).filter(n => {
+  // التحقق من أن لكل ملاحظة معرف وحقول أساسية
+      return n && n.id && typeof n.id === 'string' && n.id.length > 0;
+      });
+
       const remoteEvents = mapRemoteRows<AppEvent>(downloadResult.results[1]);
       const remoteTasks = mapRemoteRows<AppTask>(downloadResult.results[2]);
       const remoteShopping = mapRemoteRows<ShoppingList>(downloadResult.results[3]);

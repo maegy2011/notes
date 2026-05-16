@@ -436,68 +436,97 @@ export default function App() {
   };
   // Helper for merging
   const mergeEntitiesLocal = <T extends { id: string; updatedAt: string }>(local: T[], remote: T[]): T[] => {
-    const mergedMap = new Map<string, T>();
-    local.forEach(item => mergedMap.set(item.id, item));
-    remote.forEach(remoteItem => {
-      const localItem = mergedMap.get(remoteItem.id);
-      if (!localItem) {
-        mergedMap.set(remoteItem.id, remoteItem);
-      } else {
-        const localTime = new Date(localItem.updatedAt).getTime();
-        const remoteTime = new Date(remoteItem.updatedAt).getTime();
-        if (remoteTime > localTime) {
-          mergedMap.set(remoteItem.id, remoteItem);
-        }
-      }
-    });
-    return Array.from(mergedMap.values());
-  };
-
-const handleSaveNote = (noteData: Partial<Note>) => {
-const timestamp = new Date().toISOString();
-// ✅ التحقق من صحة البيانات
-if (!noteData || typeof noteData !== 'object') {
-showToast('❌ بيانات غير صحيحة');
-return;
-}
-if (noteData.title && noteData.title.length > 500) {
-  showToast('❌ عنوان الملاحظة طويل جداً (الحد الأقصى 500 حرف)');
-  return;
-}
-setNotes(prev => prev.map(n => n.id === currentEditNote.id ? updatedNote : n));
-
-      showToast('تم تحديث الملاحظة بنجاح');
-      if (viewingNote && viewingNote.id === currentEditNote.id) {
-        setViewingNote(updatedNote);
-      }
+  const mergedMap = new Map<string, T>();
+  local.forEach(item => mergedMap.set(item.id, item));
+  remote.forEach(remoteItem => {
+    const localItem = mergedMap.get(remoteItem.id);
+    if (!localItem) {
+      mergedMap.set(remoteItem.id, remoteItem);
     } else {
-        updatedNote = {
-        id: uid(),
-        title: (noteData.title || 'ملاحظة جديدة').slice(0, 500),
-        content: (noteData.content || '').slice(0, 500000),
-        category: noteData.category || 'ideas',
-        color: noteData.color || 'amber',
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        isPinned: false,
-        isFavorite: false,
-        isArchived: false,
-        isTrash: false,
-        isLocked: false,
-        checklist: noteData.checklist,
-        reminder: noteData.reminder
-      };
-      setNotes(prev => [updatedNote, ...prev]);
-      showToast('تمت إضافة الملاحظة الجديدة');
+      // ✅ التحقق من صحة التواريخ قبل المقارنة
+      let localTime = NaN;
+      let remoteTime = NaN;
+      try {
+        localTime = new Date(localItem.updatedAt).getTime();
+        remoteTime = new Date(remoteItem.updatedAt).getTime();
+      } catch {
+        if (import.meta.env.DEV) console.warn('[Merge] Invalid date format');
+        return; // تخطي هذا العنصر إذا كانت التاريخ غير صحيح
+      }
+      // ✅ تجنب المقارنة مع NaN
+      if (isNaN(localTime) || isNaN(remoteTime)) {
+        if (import.meta.env.DEV) console.warn('[Merge] Invalid date timestamp');
+        return;
+      }
+      if (remoteTime > localTime) {
+        mergedMap.set(remoteItem.id, remoteItem);
+      }
     }
+  });
+  return Array.from(mergedMap.values());
+};
 
-    // Sync Notes with SQLite Database
-    dbNotes.save(updatedNote);
 
-    setIsEditing(false);
-    setCurrentEditNote(null);
-    triggerAutoSync();
-  };
+  const handleSaveNote = (noteData: Partial<Note>) => {
+  const timestamp = new Date().toISOString();
+  
+  // ✅ التحقق من صحة البيانات
+  if (!noteData || typeof noteData !== 'object') {
+    showToast('❌ بيانات غير صحيحة');
+    return;
+  }
+  if (noteData.title && noteData.title.length > 500) {
+    showToast('❌ عنوان الملاحظة طويل جداً (الحد الأقصى 500 حرف)');
+    return;
+  }
+  
+  let updatedNote: Note;
+  
+  if (currentEditNote) {
+  const existingNote = notes.find(n => n.id === currentEditNote.id);
+  if (!existingNote) {
+    showToast('❌ لم يتم العثور على الملاحظة المراد تحديثها');
+    return;
+  }
+  updatedNote = {
+    ...existingNote,
+    ...noteData,
+    updatedAt: timestamp
+  } as Note;
+
+    setNotes(prev => prev.map(n => n.id === currentEditNote.id ? updatedNote : n));
+    showToast('تم تحديث الملاحظة بنجاح');
+    if (viewingNote && viewingNote.id === currentEditNote.id) {
+      setViewingNote(updatedNote);
+    }
+  } else {
+    updatedNote = {
+      id: uid(),
+      title: (noteData.title || 'ملاحظة جديدة').slice(0, 500),
+      content: (noteData.content || '').slice(0, 500000),
+      category: noteData.category || 'ideas',
+      color: noteData.color || 'amber',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      isPinned: false,
+      isFavorite: false,
+      isArchived: false,
+      isTrash: false,
+      isLocked: false,
+      checklist: noteData.checklist,
+      reminder: noteData.reminder
+    };
+    setNotes(prev => [updatedNote, ...prev]);
+    showToast('تمت إضافة الملاحظة الجديدة');
+  }
+  
+  // Sync Notes with SQLite Database
+  dbNotes.save(updatedNote);
+  setIsEditing(false);
+  setCurrentEditNote(null);
+  triggerAutoSync();
+};
+
 
   const handleTogglePin = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -648,7 +677,7 @@ setNotes(prev => prev.map(n => n.id === currentEditNote.id ? updatedNote : n));
         const toDelete = prev.filter(n => 
           n.isTrash && n.deletedAt && new Date(n.deletedAt) < thirtyDaysAgo
         );
-        if (toDelete.length > 0) {
+       if (toDelete.length > 0) {
   // حذف من SQLite أيضاً
   toDelete.forEach(n => dbNotes.delete(n.id));
   // ✅ نقل showToast خارج مُحدِّث الحالة
@@ -658,7 +687,6 @@ setNotes(prev => prev.map(n => n.id === currentEditNote.id ? updatedNote : n));
 }
 return prev;
 
-    };
 
     cleanupTrashedNotes();
     const interval = setInterval(cleanupTrashedNotes, 24 * 60 * 60 * 1000);

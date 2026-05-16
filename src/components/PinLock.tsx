@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Lock as LockIcon, Eye, EyeOff, LockKeyhole, AlertTriangle, Delete } from 'lucide-react';
-import CryptoJS from 'crypto-js';
 
 const PIN_STORAGE_KEY = 'notes_app_pin_hash_v1';
 const DEVICE_SALT_KEY = '_app_salt';
@@ -182,13 +181,6 @@ for (let i = 0; i < maxLen; i++) {
   result |= c1 ^ c2;
 }
 return result === 0;
-
-  let result = 0;
-  for (let i = 0; i < computedHash.length; i++) {
-    result |= computedHash.charCodeAt(i) ^ storedHash.charCodeAt(i);
-  }
-  return result === 0;
-};
 
 
   const getStoredPinHash = (): string | null => {
