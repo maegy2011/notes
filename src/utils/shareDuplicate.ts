@@ -5,16 +5,22 @@ import DOMPurify from 'dompurify';
    Helpers — strip HTML & format dates
    ───────────────────────────────────────────── */
 const stripHtml = (html: string): string => {
-  if (!html) return '';
-  // ✅ تعقيم أولاً ثم استخراج النص فقط
-  const clean = DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: [],
-    ALLOWED_ATTR: []
-  });
-  const tmp = document.createElement('div');
-  tmp.textContent = clean; // ✅ textContent لا يُنفذ HTML
-  return tmp.textContent || '';
+if (!html || typeof html !== 'string') return '';
+try {
+const clean = DOMPurify.sanitize(html, {
+ALLOWED_TAGS: [],
+ALLOWED_ATTR: [],
+ALLOW_DATA_ATTR: false
+});
+const tmp = document.createElement('div');
+tmp.textContent = clean;
+return tmp.textContent?.trim() || '';
+} catch (err) {
+if (import.meta.env.DEV) console.error('[stripHtml] Error:', err);
+return '';
+}
 };
+
 
 const fmtDateTime = (iso?: string): string => {
   if (!iso) return '';
@@ -25,16 +31,25 @@ const fmtDateTime = (iso?: string): string => {
 };
 
 export const uid = (): string => {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  // Fallback متوافق مع UUID v4
-  const arr = new Uint8Array(16);
-  crypto.getRandomValues(arr);
-  arr[6] = (arr[6] & 0x0f) | 0x40; // الإصدار 4
-  arr[8] = (arr[8] & 0x3f) | 0x80; // المتغير 10
-  return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+return crypto.randomUUID();
+}
+try {
+// Fallback متوافق مع UUID v4
+if (typeof crypto === 'undefined' || typeof crypto.getRandomValues !== 'function') {
+throw new Error('Crypto API not available');
+}
+const arr = new Uint8Array(16);
+crypto.getRandomValues(arr);
+arr[6] = (arr[6] & 0x0f) | 0x40;
+arr[8] = (arr[8] & 0x3f) | 0x80;
+return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+} catch {
+// Fallback أخير: استخدام Date + Math.random
+return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
 };
+
 
 /* ─────────────────────────────────────────────
    Format entities to plain text for sharing

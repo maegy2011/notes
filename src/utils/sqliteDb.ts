@@ -50,28 +50,35 @@ const loadFromLocalStorage = (): Uint8Array | null => {
 try {
 const b64 = localStorage.getItem(DB_STORAGE_KEY);
 if (!b64 || typeof b64 !== 'string') return null;
-// ✅ التحقق من طول Base64 المعقول (أكبر من 100 بايت على الأقل)
+// التحقق من طول Base64 المعقول (100 بايت على الأقل = سدس البيانات الأصلية)
 if (b64.length < 100) {
-console.warn('[SQLite] Stored database is suspiciously small, ignoring');
+if (import.meta.env.DEV) console.warn('[SQLite] Stored database is suspiciously small, ignoring');
 return null;
 }
-// ✅ التحقق من صيغة Base64 الصحيحة
+// التحقق من صيغة Base64 الصحيحة
 if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64)) {
-console.error('[SQLite] Invalid Base64 format');
+if (import.meta.env.DEV) console.error('[SQLite] Invalid Base64 format');
 return null;
 }
-const uint8 = base64ToUint8(b64);
-// ✅ التحقق من أن البيانات ليست فارغة وطول معقول
+let uint8: Uint8Array;
+try {
+uint8 = base64ToUint8(b64);
+} catch (decodeErr) {
+if (import.meta.env.DEV) console.error('[SQLite] Failed to decode Base64:', decodeErr);
+return null;
+}
+// التحقق من أن البيانات المفكوكة معقولة
 if (uint8.length < 100) {
-console.warn('[SQLite] Loaded database is suspiciously small');
+if (import.meta.env.DEV) console.warn('[SQLite] Loaded database is suspiciously small');
 return null;
 }
 return uint8;
 } catch (err) {
-console.error('[SQLite] Failed to load DB from storage:', err);
+if (import.meta.env.DEV) console.error('[SQLite] Failed to load DB from storage:', err);
 return null;
 }
 };
+
 
 
 /* ─────────────────────────────────────────────

@@ -342,16 +342,28 @@ return [];
 
 // ✅ دالة تنظيف البيانات من الحقول الخطيرة
 function sanitizeEntity<T extends { id: string }>(entity: any): T {
-const allowedKeys = ['id', 'title', 'content', 'category', 'color', 'createdAt', 'updatedAt', 
-'isPinned', 'isFavorite', 'isArchived', 'isTrash', 'isLocked', 'isCompleted', 'checklist', 
+if (!entity || typeof entity !== 'object') {
+throw new Error('Invalid entity provided to sanitizeEntity');
+}
+const allowedKeys = ['id', 'title', 'content', 'category', 'color', 'createdAt', 'updatedAt',
+'isPinned', 'isFavorite', 'isArchived', 'isTrash', 'isLocked', 'isCompleted', 'checklist',
 'reminder', 'priority', 'dueDate', 'description', 'items', 'totalBudget', 'totalSpent'];
 const sanitized: any = {};
 for (const key of allowedKeys) {
 if (key in entity) {
-sanitized[key] = entity[key];
+const value = entity[key];
+// تحقق من نوع البيانات الأساسي
+if (typeof value === 'string' && value.length > 100000) {
+if (import.meta.env.DEV) console.warn(`[Sanitize] Field "${key}" exceeds maximum length`);
+continue;
+}
+sanitized[key] = value;
 }
 }
-sanitized.id = entity.id;
+// تأكد من وجود id (الحقل الإلزامي)
+if (!sanitized.id || typeof sanitized.id !== 'string') {
+throw new Error('Entity must have a valid id field');
+}
 return sanitized as T;
 }
 

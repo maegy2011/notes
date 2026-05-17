@@ -436,34 +436,33 @@ export default function App() {
   };
   // Helper for merging
   const mergeEntitiesLocal = <T extends { id: string; updatedAt: string }>(local: T[], remote: T[]): T[] => {
-  const mergedMap = new Map<string, T>();
-  local.forEach(item => mergedMap.set(item.id, item));
-  remote.forEach(remoteItem => {
-    const localItem = mergedMap.get(remoteItem.id);
-    if (!localItem) {
-      mergedMap.set(remoteItem.id, remoteItem);
-    } else {
-      // ✅ التحقق من صحة التواريخ قبل المقارنة
-      let localTime = NaN;
-      let remoteTime = NaN;
-      try {
-        localTime = new Date(localItem.updatedAt).getTime();
-        remoteTime = new Date(remoteItem.updatedAt).getTime();
-      } catch {
-        if (import.meta.env.DEV) console.warn('[Merge] Invalid date format');
-        return; // تخطي هذا العنصر إذا كانت التاريخ غير صحيح
-      }
-      // ✅ تجنب المقارنة مع NaN
-      if (isNaN(localTime) || isNaN(remoteTime)) {
-        if (import.meta.env.DEV) console.warn('[Merge] Invalid date timestamp');
-        return;
-      }
-      if (remoteTime > localTime) {
-        mergedMap.set(remoteItem.id, remoteItem);
-      }
-    }
-  });
-  return Array.from(mergedMap.values());
+const mergedMap = new Map<string, T>();
+local.forEach(item => mergedMap.set(item.id, item));
+remote.forEach(remoteItem => {
+const localItem = mergedMap.get(remoteItem.id);
+if (!localItem) {
+mergedMap.set(remoteItem.id, remoteItem);
+} else {
+let localTime = NaN;
+let remoteTime = NaN;
+try {
+localTime = new Date(localItem.updatedAt).getTime();
+remoteTime = new Date(remoteItem.updatedAt).getTime();
+} catch {
+if (import.meta.env.DEV) console.warn('[Merge] Invalid date format');
+// ✅ استخدم البيانات المحلية كافتراضي إذا فشل التحليل
+return;
+}
+if (isNaN(localTime) || isNaN(remoteTime)) {
+if (import.meta.env.DEV) console.warn('[Merge] Invalid date timestamp');
+return;
+}
+if (remoteTime > localTime) {
+mergedMap.set(remoteItem.id, remoteItem);
+}
+}
+});
+return Array.from(mergedMap.values());
 };
 
 
@@ -476,9 +475,14 @@ export default function App() {
     return;
   }
   if (noteData.title && noteData.title.length > 500) {
-    showToast('❌ عنوان الملاحظة طويل جداً (الحد الأقصى 500 حرف)');
-    return;
-  }
+showToast('❌ عنوان الملاحظة طويل جداً (الحد الأقصى 500 حرف)');
+return;
+}
+if (noteData.content && noteData.content.length > 500000) {
+showToast('❌ محتوى الملاحظة طويل جداً (الحد الأقصى 500,000 حرف)');
+return;
+}
+
   
   let updatedNote: Note;
   
@@ -684,15 +688,15 @@ export default function App() {
   const count = toDelete.length;
   setTimeout(() => showToast(`تم حذف ${count} ملاحظة قديمة من سلة المهملات تلقائياً`), 0);
   return prev.filter(n => !n.isTrash || (n.deletedAt && new Date(n.deletedAt) >= thirtyDaysAgo));
+
 }
 return prev;
-
-
-    cleanupTrashedNotes();
-    const interval = setInterval(cleanupTrashedNotes, 24 * 60 * 60 * 1000);
-    
-    return () => clearInterval(interval);
-  }, []); // مصفوفة تبعيات فارغة — يعمل مرة واحدة فقط عند التركيب
+});
+};
+cleanupTrashedNotes();
+const interval = setInterval(cleanupTrashedNotes, 24 * 60 * 60 * 1000);
+return () => clearInterval(interval);
+}, []);
 
   const handleToggleChecklistItem = (noteId: string, itemId: string) => {
     setNotes(prev =>
