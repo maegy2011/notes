@@ -261,18 +261,19 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
         {note.content && (
           <div
             className="text-xs text-slate-200 leading-relaxed font-normal select-text break-words bg-slate-900/40 p-4 rounded-2xl border border-slate-800/60 rich-text-view"
-              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(note.content, {
-              ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'p', 'br',
-                             'ul', 'ol', 'li', 'h1', 'h2', 'h3',
-                             'blockquote', 'code', 'pre', 'span', 'del'],
-              ALLOWED_ATTR: ['class'],  // إزالة 'style' — يمنع CSS Injection
-              FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form',
-                            'input', 'textarea', 'button', 'a', 'img', 'style'],
-              FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover',
-                            'onfocus', 'onblur', 'onsubmit', 'href', 'src', 'style'],
-              ALLOW_DATA_ATTR: false,
-            }) }}
-          />
+           dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(note.content, {
+            ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'p', 'br',
+                           'ul', 'ol', 'li', 'h1', 'h2', 'h3',
+                           'blockquote', 'code', 'pre', 'span', 'del', 'a'],
+            ALLOWED_ATTR: ['class', 'href', 'target', 'rel'],
+            FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form',
+                          'input', 'textarea', 'button', 'style'],
+            FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover',
+                          'onfocus', 'onblur', 'onsubmit', 'style'],
+            ALLOW_DATA_ATTR: false,
+            // Force all links to have rel="noopener noreferrer"
+            ADD_ATTR: ['rel'],
+          }) }}
         )}
 
         {note.checklist && note.checklist.length > 0 && (

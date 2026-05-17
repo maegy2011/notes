@@ -1084,9 +1084,17 @@ return () => clearInterval(interval);
         }
 
         // 1. Notes — حفظ في SQLite
+        // 1. Notes — حفظ في SQLite مع التحقق
         if (Array.isArray(imported.notes)) {
-          dbNotes.replaceAll(imported.notes);
-          setNotes(imported.notes);
+          const validNotes = imported.notes.filter((note: any) => {
+            return note && 
+                   typeof note.id === 'string' && 
+                   typeof note.title === 'string' &&
+                   typeof note.createdAt === 'string' &&
+                   typeof note.updatedAt === 'string';
+          });
+          dbNotes.replaceAll(validNotes);
+          setNotes(validNotes);
         }
         
         // 2. Events — حفظ في SQLite

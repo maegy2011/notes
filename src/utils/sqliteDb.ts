@@ -36,12 +36,22 @@ const base64ToUint8 = (b64: string): Uint8Array => {
 };
 
 
-const persistToLocalStorage = async () => {
+const persistToLocalStorage = async (): Promise<void> => {
   if (!db) return;
-  const data = db.export();
-  const b64 = uint8ToBase64(data);
-  const encrypted = await encrypt(b64, await getEncryptionKey());
-  localStorage.setItem(DB_STORAGE_KEY, encrypted);
+  try {
+    const data = db.export();
+    const b64 = uint8ToBase64(data);
+    const encrypted = await encrypt(b64, await getEncryptionKey());
+    localStorage.setItem(DB_STORAGE_KEY, encrypted);
+  } catch (err) {
+    // Fallback: store unencrypted if encryption fails (dev only)
+    if (import.meta.env.DEV) {
+      console.warn('[SQLite] Encryption failed, storing plain:', err);
+      const data = db.export();
+      const b64 = uint8ToBase64(data);
+      localStorage.setItem(DB_STORAGE_KEY, b64);
+    }
+  }
 };
 
 // helper: استخدم مفتاحًا ثابتًا أو مشتقًا من كلمة مرور المستخدم

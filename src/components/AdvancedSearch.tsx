@@ -233,7 +233,9 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   }, []);
 
   const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFilters(prev => ({ ...prev, query: e.target.value }));
+  // تنظيف المدخلات من الأحرف الخطرة
+  const sanitized = e.target.value.slice(0, 500).replace(/[\x00-\x1F\x7F]/g, '');
+  setFilters(prev => ({ ...prev, query: sanitized }));
   };
 
   const handleSearch = (query?: string) => {
