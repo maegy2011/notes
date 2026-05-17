@@ -367,10 +367,12 @@ export default function App() {
     }, 2500);
   };
 
-  let syncInProgress = false;
+    const syncInProgressRef = useRef(false);
+  
   const triggerAutoSync = async () => {
-    if (syncInProgress) return; // ✅ منع المزامنة المتوازية
+    if (syncInProgressRef.current) return; // ✅ منع المزامنة المتوازية
     const cfg = tursoHelpers.getConfig();
+    syncInProgressRef.current = true;
     syncInProgress = true;
     try {
     if (cfg.url && cfg.token && cfg.autoSync) {
@@ -1105,8 +1107,6 @@ return () => clearInterval(interval);
           setShoppingLists(imported.shoppingLists);
         }
 
-        // 5. Settings
-                // 5. Settings — تحقق من البنية قبل التطبيق
         if (imported.settings && typeof imported.settings === 'object') {
           const safeSettings: AppSettings = {
             syncOnLaunch: typeof imported.settings.syncOnLaunch === 'boolean' ? imported.settings.syncOnLaunch : true,

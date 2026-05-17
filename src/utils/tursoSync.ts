@@ -105,11 +105,15 @@ export const tursoHelpers = {
       sanitized = 'https://' + sanitized;
     }
     if (sanitized.endsWith('/')) sanitized = sanitized.slice(0, -1);
-    // ✅ التحقق من أن الرابط ينتمي لنطاق Turso فقط
+        // ✅ التحقق من أن الرابط ينتمي لنطاق Turso فقط
     try {
       const hostname = new URL(sanitized).hostname;
-      if (!hostname.endsWith('.turso.io') && hostname !== 'turso.io') {
-        throw new Error('رابط غير صالح: يجب أن ينتمي لنطاق turso.io');
+      const isTursoDomain = hostname === 'turso.io' || 
+                            hostname.endsWith('.turso.io') ||
+                            hostname.endsWith('.turso.dev') ||
+                            hostname === 'api.turso.io';
+      if (!isTursoDomain) {
+        throw new Error('رابط غير صالح: يجب أن ينتمي لنطاق turso.io أو turso.dev');
       }
     } catch (e) {
       throw new Error(e instanceof Error ? e.message : 'رابط قاعدة بيانات غير صالح');

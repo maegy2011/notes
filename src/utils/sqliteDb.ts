@@ -7,6 +7,8 @@
 import initSqlJs, { Database } from 'sql.js';
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { Note, AppEvent, AppTask, ShoppingList } from '../types';
+import { encrypt } from './secureCrypto'; // سننشئ هذا الملف لاحقًا
+
 
 const DB_STORAGE_KEY = 'mohafadaty_sqlite_db_v1';
 
@@ -33,50 +35,66 @@ const base64ToUint8 = (b64: string): Uint8Array => {
   return arr;
 };
 
-/** Save the entire SQLite database file to localStorage as base64 */
-const persistToLocalStorage = () => {
+
+const persistToLocalStorage = async () => {
   if (!db) return;
-  try {
-    const data = db.export();
-    const b64 = uint8ToBase64(data);
-    localStorage.setItem(DB_STORAGE_KEY, b64);
-  } catch (err) {
-    console.error('[SQLite] Failed to persist DB:', err);
-  }
+  const data = db.export();
+  const b64 = uint8ToBase64(data);
+  const encrypted = await encrypt(b64, await getEncryptionKey());
+  localStorage.setItem(DB_STORAGE_KEY, encrypted);
 };
 
-/** Load existing database from localStorage, or return null */
-const loadFromLocalStorage = (): Uint8Array | null => {
-try {
-const b64 = localStorage.getItem(DB_STORAGE_KEY);
-if (!b64 || typeof b64 !== 'string') return null;
-// التحقق من طول Base64 المعقول (100 بايت على الأقل = سدس البيانات الأصلية)
-if (b64.length < 100) {
-if (import.meta.env.DEV) console.warn('[SQLite] Stored database is suspiciously small, ignoring');
-return null;
+// helper: استخدم مفتاحًا ثابتًا أو مشتقًا من كلمة مرور المستخدم
+async function getEncryptionKey(): Promise<string> {
+  // يمكن تخزين المفتاح في sessionStorage أو استخلاصه من PIN
+  let key = sessionStorage.getItem('app_encryption_key');
+  if (!key) {
+    key = crypto.randomUUID();
+    sessionStorage.setItem('app_encryption_key', key);
+  }
+  return key;
 }
-// التحقق من صيغة Base64 الصحيحة
-if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64)) {
-if (import.meta.env.DEV) console.error('[SQLite] Invalid Base64 format');
-return null;
-}
-let uint8: Uint8Array;
-try {
-uint8 = base64ToUint8(b64);
-} catch (decodeErr) {
-if (import.meta.env.DEV) console.error('[SQLite] Failed to decode Base64:', decodeErr);
-return null;
-}
-// التحقق من أن البيانات المفكوكة معقولة
-if (uint8.length < 100) {
-if (import.meta.env.DEV) console.warn('[SQLite] Loaded database is suspiciously small');
-return null;
-}
-return uint8;
-} catch (err) {
-if (import.meta.env.DEV) console.error('[SQLite] Failed to load DB from storage:', err);
-return null;
-}
+const loadFromLocalStorage = async (): Promise<Uint8Array | null> => {
+  try {
+    const encrypted = localStorage.getItem(DB_STORAGE_KEY);
+    if (!encrypted || typeof encrypted !== 'string') return null;
+    
+    // فك التشفير أولاً
+    let b64: string;
+    try {
+      b64 = await decrypt(encrypted, await getEncryptionKey());
+    } catch {
+      // إذا فشل فك التشفير، حاول قراءة البيانات مباشرة (للتوافق مع النسخ القديمة)
+      b64 = encrypted;
+    }
+    
+    // التحقق من طول Base64 المعقول
+    if (b64.length < 100) {
+      if (import.meta.env.DEV) console.warn('[SQLite] Stored database is suspiciously small, ignoring');
+      return null;
+    }
+    // التحقق من صيغة Base64 الصحيحة
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64)) {
+      if (import.meta.env.DEV) console.error('[SQLite] Invalid Base64 format');
+      return null;
+    }
+    let uint8: Uint8Array;
+    try {
+      uint8 = base64ToUint8(b64);
+    } catch (decodeErr) {
+      if (import.meta.env.DEV) console.error('[SQLite] Failed to decode Base64:', decodeErr);
+      return null;
+    }
+    // التحقق من أن البيانات المفكوكة معقولة
+    if (uint8.length < 100) {
+      if (import.meta.env.DEV) console.warn('[SQLite] Loaded database is suspiciously small');
+      return null;
+    }
+    return uint8;
+  } catch (err) {
+    if (import.meta.env.DEV) console.error('[SQLite] Failed to load DB from storage:', err);
+    return null;
+  }
 };
 
 
