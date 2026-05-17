@@ -125,8 +125,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
     );
   }
 
-  // Read settings dynamically from localStorage
-  const getAppSettings = () => {
+ const appSettings = React.useMemo(() => {
     try {
       const saved = localStorage.getItem('notes_app_settings_v1');
       if (saved) return JSON.parse(saved);
@@ -135,8 +134,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
       defaultFontSize: 'base',
       listItemHeight: 'normal'
     };
-  };
-  const appSettings = getAppSettings();
+  }, []);
 
   // 1. Font Size mapping
   const fontSizeClass: Record<string, string> = {

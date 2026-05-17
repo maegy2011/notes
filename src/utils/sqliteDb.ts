@@ -7,8 +7,7 @@
 import initSqlJs, { Database } from 'sql.js';
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { Note, AppEvent, AppTask, ShoppingList } from '../types';
-import { encrypt } from './secureCrypto'; // سننشئ هذا الملف لاحقًا
-
+import { encrypt, decrypt } from './secureCrypto';
 
 const DB_STORAGE_KEY = 'mohafadaty_sqlite_db_v1';
 
@@ -56,11 +55,12 @@ const persistToLocalStorage = async (): Promise<void> => {
 
 // helper: استخدم مفتاحًا ثابتًا أو مشتقًا من كلمة مرور المستخدم
 async function getEncryptionKey(): Promise<string> {
-  // يمكن تخزين المفتاح في sessionStorage أو استخلاصه من PIN
-  let key = sessionStorage.getItem('app_encryption_key');
+  // استخدم localStorage بدلاً من sessionStorage لضمان بقاء المفتاح
+  const ENCRYPTION_KEY_STORAGE = 'mohafadaty_enc_key_v1';
+  let key = localStorage.getItem(ENCRYPTION_KEY_STORAGE);
   if (!key) {
     key = crypto.randomUUID();
-    sessionStorage.setItem('app_encryption_key', key);
+    localStorage.setItem(ENCRYPTION_KEY_STORAGE, key);
   }
   return key;
 }
@@ -121,8 +121,8 @@ export const initDatabase = async (): Promise<Database> => {
     locateFile: () => sqlWasmUrl,
   });
 
-  const existingData = loadFromLocalStorage();
-  if (existingData) {
+  const existingData = await loadFromLocalStorage();
+    if (existingData) {
     db = new SQL.Database(existingData);
     // لا تسجّل في الإنتاج
     if (import.meta.env.DEV) console.log('[SQLite] Loaded existing database');
@@ -140,7 +140,7 @@ export const initDatabase = async (): Promise<Database> => {
   d.run(`CREATE TABLE IF NOT EXISTS shopping_lists (id TEXT PRIMARY KEY, data TEXT NOT NULL)`);
   d.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
 
-  persistToLocalStorage();
+  await persistToLocalStorage();
   return d;
 };
 
@@ -191,7 +191,7 @@ d.run(`UPDATE ${table} SET data = ? WHERE id = ?`, [json, id]);
 } else {
 d.run(`INSERT INTO ${table} (id, data) VALUES (?, ?)`, [id, json]);
 }
-persistToLocalStorage();
+await persistToLocalStorage();
 } catch (err) {
 console.error(`[SQLite] Upsert failed for table ${table}:`, err);
 throw new Error(`[SQLite] Failed to save data to ${table}`);
@@ -211,14 +211,14 @@ const deleteRow = (table: string, id: string) => {
   validateTableName(table);
   const d = getDb();
   d.run(`DELETE FROM ${table} WHERE id = ?`, [id]);
-  persistToLocalStorage();
+  await persistToLocalStorage();
 };
 
 const clearTable = (table: string) => {
   validateTableName(table);
   const d = getDb();
   d.run(`DELETE FROM ${table}`);
-  persistToLocalStorage();
+  await persistToLocalStorage();
 };
 
 /* ─────────────────────────────────────────────
@@ -296,12 +296,12 @@ export const dbSettings = {
     } else {
       d.run(`INSERT INTO settings (key, value) VALUES (?, ?)`, [key, value]);
     }
-    persistToLocalStorage();
+    await persistToLocalStorage();
   },
   delete: (key: string) => {
     const d = getDb();
     d.run(`DELETE FROM settings WHERE key = ?`, [key]);
-    persistToLocalStorage();
+    await persistToLocalStorage();
   },
 };
 
@@ -316,7 +316,7 @@ export const exportDbFile = (): Uint8Array | null => {
 export const importDbFile = (data: Uint8Array) => {
   if (!SQL) throw new Error('[SQLite] SQL.js not initialized');
   db = new SQL.Database(data);
-  persistToLocalStorage();
+  await persistToLocalStorage();
 };
 
 /** Get the base64 blob string (for backup JSON) */
@@ -325,10 +325,17 @@ export const getDbBase64 = (): string | null => {
 };
 
 /** Restore from base64 blob string */
-export const restoreDbFromBase64 = (b64: string) => {
+export const restoreDbFromBase64 = async (b64: string) => {
   localStorage.setItem(DB_STORAGE_KEY, b64);
   if (SQL) {
-    const data = base64ToUint8(b64);
+    // فك التشفير أولاً قبل بناء قاعدة البيانات
+    let rawB64: string;
+    try {
+      rawB64 = await decrypt(b64, await getEncryptionKey());
+    } catch {
+      rawB64 = b64; // fallback للتوافق مع النسخ القديمة
+    }
+    const data = base64ToUint8(rawB64);
     db = new SQL.Database(data);
   }
 };

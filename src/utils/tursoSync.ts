@@ -351,7 +351,10 @@ throw new Error('Invalid entity provided to sanitizeEntity');
 }
 const allowedKeys = ['id', 'title', 'content', 'category', 'color', 'createdAt', 'updatedAt',
 'isPinned', 'isFavorite', 'isArchived', 'isTrash', 'isLocked', 'isCompleted', 'checklist',
-'reminder', 'priority', 'dueDate', 'description', 'items', 'totalBudget', 'totalSpent'];
+'reminder', 'priority', 'dueDate', 'reminderAt', 'description', 'items', 'totalBudget', 
+'totalSpent', 'deletedAt', 'name', 'store', 'budget', 'allDay', 'startDatetime', 
+'endDatetime', 'location', 'repeat', 'color', 'qty', 'unit', 'price', 'note', 
+'checked', 'addedAt', 'text', 'completed'];
 const sanitized: any = {};
 for (const key of allowedKeys) {
 if (key in entity) {
@@ -373,14 +376,16 @@ return sanitized as T;
 
 
 /** Merges local and remote entities based on updatedAt timestamp */
-function mergeEntities<T extends { id: string; updatedAt: string }>(local: T[], remote: T[]): T[] {
+function mergeEntities<T extends { id: string; updatedAt: string }>(
+  local: T[], 
+  remote: T[],
+  deletedIds?: Set<string>
+): T[] {
   const mergedMap = new Map<string, T>();
-
-  // Seed with local entities
   local.forEach(item => mergedMap.set(item.id, item));
-
-  // Merge remote entities, keeping the most recently updated
   remote.forEach(remoteItem => {
+    // تجاهل العناصر المحذوفة محلياً
+    if (deletedIds?.has(remoteItem.id)) return;
     const localItem = mergedMap.get(remoteItem.id);
     if (!localItem) {
       mergedMap.set(remoteItem.id, remoteItem);
@@ -392,6 +397,5 @@ function mergeEntities<T extends { id: string; updatedAt: string }>(local: T[], 
       }
     }
   });
-
   return Array.from(mergedMap.values());
 }
