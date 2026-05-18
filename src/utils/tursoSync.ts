@@ -46,7 +46,7 @@ class RateLimiter {
   }
 }
 
-const syncLimiter = new RateLimiter(5, 60_000); // 5 طلبات كل دقيقة
+const syncLimiter = new RateLimiter(5, 60_000);
 
 /* ─────────────────────────────────────────────
    Fetch مع Timeout
@@ -75,7 +75,6 @@ export const tursoHelpers = {
       const data = localStorage.getItem(CONFIG_KEY);
       const cfg = data ? JSON.parse(data) : { url: '', autoSync: false };
       
-      // التحقق من انتهاء صلاحية التوكن
       let token = '';
       const tokenRaw = sessionStorage.getItem(TOKEN_SESSION_KEY);
       
@@ -104,7 +103,6 @@ export const tursoHelpers = {
     localStorage.setItem(CONFIG_KEY, JSON.stringify(safeConfig));
     
     if (token) {
-      // تخزين التوكن مع طابع زمني لانتهاء الصلاحية (8 ساعات)
       const tokenData = JSON.stringify({
         value: token,
         expiresAt: Date.now() + 8 * 60 * 60 * 1000
@@ -119,28 +117,11 @@ export const tursoHelpers = {
 
   sanitizeUrl: (url: string): string => {
     let sanitized = url.trim();
+    if (sanitized.startsWith('libsql://')) sanitized = sanitized.replace('libsql://', 'https://');
+    if (sanitized.startsWith('http://')) sanitized = sanitized.replace('http://', 'https://');
+    if (!sanitized.startsWith('https://')) sanitized = 'https://' + sanitized;
+    if (sanitized.endsWith('/')) sanitized = sanitized.slice(0, -1);
     
-    // تحويل libsql:// إلى https://
-    if (sanitized.startsWith('libsql://')) {
-      sanitized = sanitized.replace('libsql://', 'https://');
-    }
-    
-    // تحويل http:// إلى https://
-    if (sanitized.startsWith('http://')) {
-      sanitized = sanitized.replace('http://', 'https://');
-    }
-    
-    // إضافة https:// إذا لم يكن موجوداً
-    if (!sanitized.startsWith('https://')) {
-      sanitized = 'https://' + sanitized;
-    }
-    
-    // إزالة الشرطة المائلة الأخيرة
-    if (sanitized.endsWith('/')) {
-      sanitized = sanitized.slice(0, -1);
-    }
-    
-    // التحقق من أن الرابط ينتمي لنطاق Turso فقط
     try {
       const hostname = new URL(sanitized).hostname;
       const isTursoDomain = 
@@ -159,7 +140,6 @@ export const tursoHelpers = {
     return sanitized;
   },
 
-  /** Execute a batch of raw SQL statements against Turso HTTP Pipeline */
   executeBatch: async (
     config: TursoConfig,
     statements: SQLStatement[],
@@ -178,10 +158,7 @@ export const tursoHelpers = {
 
       return {
         type: 'execute',
-        stmt: {
-          sql: stmt.sql,
-          args: args.length > 0 ? args : undefined
-        }
+        stmt: { sql: stmt.sql, args: args.length > 0 ? args : undefined }
       };
     });
 
@@ -196,24 +173,16 @@ export const tursoHelpers = {
       }, DEFAULT_TIMEOUT_MS);
 
       if (!response.ok) {
-        // عدم تسجيل محتوى الخطأ الكامل — قد يحتوي معلومات حساسة
-        if (import.meta.env.DEV && response.status) {
-          console.error('[Turso] Request failed with status:', response.status);
-        }
-        
-        // رسالة عامة وآمنة
         const userMessage =
           response.status === 401 ? 'خطأ في المصادقة — تحقق من بيانات الاتصال' :
           response.status === 403 ? 'ليس لديك صلاحية الوصول إلى قاعدة البيانات' :
           response.status === 429 ? 'عدد محاولات كثير — انتظر بضع دقائق' :
           response.status >= 500 ? 'الخادم غير متاح حالياً' :
           'فشل الاتصال بقاعدة البيانات';
-        
         throw new Error(userMessage);
       }
 
       const result = await response.json();
-      
       if (result.results) {
         for (const res of result.results) {
           if (res.type === 'error') {
@@ -221,10 +190,8 @@ export const tursoHelpers = {
           }
         }
       }
-      
       return result;
     } catch (err) {
-      // إعادة المحاولة للأخطاء المؤقتة
       if (retryCount < MAX_RETRIES && err instanceof Error && 
           (err.message.includes('network') || err.message.includes('timeout'))) {
         await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
@@ -234,10 +201,8 @@ export const tursoHelpers = {
     }
   },
 
-  /** Test connection by executing a simple SELECT query */
   testConnection: async (config: TursoConfig): Promise<boolean> => {
     if (!config.url || !config.token) return false;
-    
     try {
       await tursoHelpers.executeBatch(config, [{ sql: 'SELECT 1' }]);
       return true;
@@ -247,7 +212,6 @@ export const tursoHelpers = {
     }
   },
 
-  /** Bootstrap database tables on Turso */
   bootstrapTables: async (config: TursoConfig): Promise<void> => {
     await tursoHelpers.executeBatch(config, [
       { sql: `CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, data TEXT)` },
@@ -257,11 +221,9 @@ export const tursoHelpers = {
     ]);
   },
 
-  /** Synchronize local SQLite tables with Turso Edge DB */
   syncNow: async (config: TursoConfig, showToast: (msg: string) => void): Promise<boolean> => {
     if (!config.url || !config.token) return false;
 
-    // Rate Limiting
     if (!syncLimiter.isAllowed()) {
       const remaining = Math.ceil(syncLimiter.getRemainingTime() / 1000);
       showToast(`⏸️ الرجاء الانتظار ${remaining} ثانية قبل المزامنة مرة أخرى`);
@@ -270,11 +232,8 @@ export const tursoHelpers = {
 
     try {
       showToast('🔄 جاري الاتصال بقاعدة بيانات Turso...');
-      
-      // 1. Ensure Turso tables exist
       await tursoHelpers.bootstrapTables(config);
 
-      // 2. Load local data
       const localNotes = dbNotes.getAll();
       const localEvents = dbEvents.getAll();
       const localTasks = dbTasks.getAll();
@@ -282,7 +241,6 @@ export const tursoHelpers = {
 
       showToast('📥 جاري تنزيل البيانات السحابية...');
 
-      // 3. Download remote records for all tables
       const downloadResult = await tursoHelpers.executeBatch(config, [
         { sql: 'SELECT id, data FROM notes' },
         { sql: 'SELECT id, data FROM events' },
@@ -290,13 +248,12 @@ export const tursoHelpers = {
         { sql: 'SELECT id, data FROM shopping_lists' }
       ]) as { results: unknown[] };
 
-      // مع تحقق إضافي من السلامة
+      // تأكيد الفلترة المشددة للبيانات الواردة
       const remoteNotes = mapRemoteRows<Note>(downloadResult.results[0]).filter(isValidEntity);
       const remoteEvents = mapRemoteRows<AppEvent>(downloadResult.results[1]).filter(isValidEntity);
       const remoteTasks = mapRemoteRows<AppTask>(downloadResult.results[2]).filter(isValidEntity);
       const remoteShopping = mapRemoteRows<ShoppingList>(downloadResult.results[3]).filter(isValidEntity);
 
-      // 4. Merge & Sync
       showToast('🔀 جاري دمج البيانات...');
       
       const mergedNotes = mergeEntities(localNotes, remoteNotes);
@@ -311,40 +268,15 @@ export const tursoHelpers = {
       const mergedShopping = mergeEntities(localShopping, remoteShopping);
       await dbShopping.replaceAll(mergedShopping);
 
-      // 5. Upload merged entities
       showToast('📤 جاري رفع التغييرات...');
       
       const uploadStatements: SQLStatement[] = [];
 
-      mergedNotes.forEach(n => {
-        uploadStatements.push({
-          sql: 'INSERT OR REPLACE INTO notes (id, data) VALUES (?, ?)',
-          args: [n.id, JSON.stringify(n)]
-        });
-      });
+      mergedNotes.forEach(n => uploadStatements.push({ sql: 'INSERT OR REPLACE INTO notes (id, data) VALUES (?, ?)', args: [n.id, JSON.stringify(n)] }));
+      mergedEvents.forEach(e => uploadStatements.push({ sql: 'INSERT OR REPLACE INTO events (id, data) VALUES (?, ?)', args: [e.id, JSON.stringify(e)] }));
+      mergedTasks.forEach(t => uploadStatements.push({ sql: 'INSERT OR REPLACE INTO tasks (id, data) VALUES (?, ?)', args: [t.id, JSON.stringify(t)] }));
+      mergedShopping.forEach(l => uploadStatements.push({ sql: 'INSERT OR REPLACE INTO shopping_lists (id, data) VALUES (?, ?)', args: [l.id, JSON.stringify(l)] }));
 
-      mergedEvents.forEach(e => {
-        uploadStatements.push({
-          sql: 'INSERT OR REPLACE INTO events (id, data) VALUES (?, ?)',
-          args: [e.id, JSON.stringify(e)]
-        });
-      });
-
-      mergedTasks.forEach(t => {
-        uploadStatements.push({
-          sql: 'INSERT OR REPLACE INTO tasks (id, data) VALUES (?, ?)',
-          args: [t.id, JSON.stringify(t)]
-        });
-      });
-
-      mergedShopping.forEach(l => {
-        uploadStatements.push({
-          sql: 'INSERT OR REPLACE INTO shopping_lists (id, data) VALUES (?, ?)',
-          args: [l.id, JSON.stringify(l)]
-        });
-      });
-
-      // Execute upload in batches
       for (let i = 0; i < uploadStatements.length; i += BATCH_SIZE) {
         const batch = uploadStatements.slice(i, i + BATCH_SIZE);
         await tursoHelpers.executeBatch(config, batch);
@@ -360,11 +292,6 @@ export const tursoHelpers = {
   }
 };
 
-/* ─────────────────────────────────────────────
-   Internal Helper Functions
-   ───────────────────────────────────────────── */
-
-/** التحقق من صحة الكيان */
 function isValidEntity<T extends { id: string }>(entity: T | null | undefined): entity is T {
   return entity !== null && 
          entity !== undefined && 
@@ -373,10 +300,8 @@ function isValidEntity<T extends { id: string }>(entity: T | null | undefined): 
          entity.id.length > 0;
 }
 
-/** Helper to convert LibSQL HTTP row schema to structured objects */
 function mapRemoteRows<T extends { id: string }>(res: unknown): T[] {
   if (!res || typeof res !== 'object') return [];
-  
   const result = res as { response?: { result?: { rows?: unknown[] } } };
   if (!result.response?.result?.rows) return [];
   
@@ -385,16 +310,12 @@ function mapRemoteRows<T extends { id: string }>(res: unknown): T[] {
   return rows.flatMap((row: unknown[]) => {
     try {
       if (!Array.isArray(row) || row.length < 2) return [];
-      
       const dataValue = (row[1] as { value?: string })?.value;
       if (typeof dataValue !== 'string') return [];
       
       const parsed = JSON.parse(dataValue) as T;
-      
-      // التحقق من وجود معرف فريد
       if (!parsed.id || typeof parsed.id !== 'string') return [];
       
-      // تنظيف البيانات
       const sanitized = sanitizeEntity(parsed);
       return isValidEntity(sanitized) ? [sanitized] : [];
     } catch (err) {
@@ -404,11 +325,8 @@ function mapRemoteRows<T extends { id: string }>(res: unknown): T[] {
   });
 }
 
-/** دالة تنظيف البيانات من الحقول الخطيرة */
 function sanitizeEntity<T extends { id: string }>(entity: T): T {
-  if (!entity || typeof entity !== 'object') {
-    return entity;
-  }
+  if (!entity || typeof entity !== 'object') return entity;
   
   const allowedKeys = new Set([
     'id', 'title', 'content', 'category', 'color', 'createdAt', 'updatedAt',
@@ -424,49 +342,31 @@ function sanitizeEntity<T extends { id: string }>(entity: T): T {
   for (const key of Object.keys(entity)) {
     if (allowedKeys.has(key)) {
       const value = (entity as Record<string, unknown>)[key];
-      
-      // تحقق من طول النصوص
-      if (typeof value === 'string' && value.length > 100000) {
-        if (import.meta.env.DEV) console.warn(`[Sanitize] Field "${key}" exceeds maximum length`);
-        continue;
-      }
-      
+      if (typeof value === 'string' && value.length > 100000) continue;
       sanitized[key] = value;
     }
   }
   
-  // تأكد من وجود id
-  if (!sanitized.id || typeof sanitized.id !== 'string') {
-    return entity; // أرجع الأصلي إذا فشل التنظيف
-  }
-  
+  if (!sanitized.id || typeof sanitized.id !== 'string') return entity;
   return sanitized as T;
 }
 
-/** Merges local and remote entities based on updatedAt timestamp */
 function mergeEntities<T extends { id: string; updatedAt: string }>(
   local: T[], 
   remote: T[],
   deletedIds?: Set<string>
 ): T[] {
   const mergedMap = new Map<string, T>();
-  
-  // أضف البيانات المحلية
   local.forEach(item => mergedMap.set(item.id, item));
   
-  // ادمج مع البيانات البعيدة
   remote.forEach(remoteItem => {
-    // تجاهل العناصر المحذوفة محلياً
     if (deletedIds?.has(remoteItem.id)) return;
-    
     const localItem = mergedMap.get(remoteItem.id);
     if (!localItem) {
       mergedMap.set(remoteItem.id, remoteItem);
     } else {
       const localTime = new Date(localItem.updatedAt).getTime();
       const remoteTime = new Date(remoteItem.updatedAt).getTime();
-      
-      // استخدم الأحدث
       if (remoteTime > localTime) {
         mergedMap.set(remoteItem.id, remoteItem);
       }

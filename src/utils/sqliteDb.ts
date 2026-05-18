@@ -1,3 +1,4 @@
+
 /**
  * SQLite Database Manager — Pure client-side, no backend.
  * Uses sql.js (SQLite compiled to WASM) running entirely in the browser.
@@ -104,7 +105,7 @@ const persistToStorage = async (): Promise<void> => {
     }
   } catch (err) {
     if (import.meta.env.DEV) {
-      console.warn('[SQLite] Failed to save database:', err);
+      console.warn('[SQLite] Encryption failed, DB NOT saved:', err);
     }
     throw new Error('[SQLite] Failed to encrypt database for storage');
   }
@@ -112,7 +113,6 @@ const persistToStorage = async (): Promise<void> => {
 
 const loadFromStorage = async (): Promise<Uint8Array | null> => {
   try {
-    // Try loading from IndexedDB first, then fallback to LocalStorage for backwards compatibility
     let encrypted = await loadFromIDB(DB_STORAGE_KEY);
     if (!encrypted) {
       encrypted = localStorage.getItem(DB_STORAGE_KEY);
@@ -132,10 +132,7 @@ const loadFromStorage = async (): Promise<Uint8Array | null> => {
       }
     }
     
-    if (b64.length < 100) {
-      if (import.meta.env.DEV) console.warn('[SQLite] Stored database is too small');
-      return null;
-    }
+    if (b64.length < 100) return null;
     
     if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64)) {
       if (import.meta.env.DEV) console.error('[SQLite] Invalid Base64 format');
@@ -143,11 +140,7 @@ const loadFromStorage = async (): Promise<Uint8Array | null> => {
     }
     
     const uint8 = base64ToUint8(b64);
-    
-    if (uint8.length < 100) {
-      if (import.meta.env.DEV) console.warn('[SQLite] Loaded database is too small');
-      return null;
-    }
+    if (uint8.length < 100) return null;
     
     return uint8;
   } catch (err) {

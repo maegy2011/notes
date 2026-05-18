@@ -614,7 +614,6 @@ export default function App() {
     showToast(`تم تفريغ سلة المهملات (${trashedNotes.length} ملاحظة محذوفة نهائياً)`);
   };
 
-  // ✅ Auto-delete trashed notes fixed using proper React patterns
   useEffect(() => {
     const cleanupTrashedNotes = () => {
       setNotes(prev => {
