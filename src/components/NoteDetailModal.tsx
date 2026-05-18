@@ -271,11 +271,10 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
             FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover',
                           'onfocus', 'onblur', 'onsubmit', 'style'],
             ALLOW_DATA_ATTR: false,
-            // Force all links to have rel="noopener noreferrer"
             ADD_ATTR: ['rel'],
           }) }}
+          />
         )}
-
         {note.checklist && note.checklist.length > 0 && (
           <div className="space-y-2.5">
             <div className="flex items-center justify-between text-xs text-slate-400 px-1">
