@@ -9,15 +9,21 @@ export interface TursoConfig {
 
 interface SQLStatement {
   sql: string;
-  args?: any[];
+  args?: unknown[];
 }
 
 const CONFIG_KEY = 'notes_app_turso_config_v1';
 const TOKEN_SESSION_KEY = 'turso_token_tmp';
+const BATCH_SIZE = 50;
+const DEFAULT_TIMEOUT_MS = 10000;
+const MAX_RETRIES = 3;
 
-// ✅ Rate Limiter لمنع الإساءة
+/* ─────────────────────────────────────────────
+   Rate Limiter لمنع الإساءة
+   ───────────────────────────────────────────── */
 class RateLimiter {
   private timestamps: number[] = [];
+  
   constructor(
     private maxRequests: number,
     private windowMs: number
@@ -32,18 +38,27 @@ class RateLimiter {
     }
     return false;
   }
+  
+  getRemainingTime(): number {
+    if (this.timestamps.length === 0) return 0;
+    const oldest = Math.min(...this.timestamps);
+    return Math.max(0, this.windowMs - (Date.now() - oldest));
+  }
 }
 
-const syncLimiter = new RateLimiter(5, 60_000); // ✅ 5 طلبات كل دقيقة
+const syncLimiter = new RateLimiter(5, 60_000); // 5 طلبات كل دقيقة
 
-// ✅ Fetch مع Timeout
+/* ─────────────────────────────────────────────
+   Fetch مع Timeout
+   ───────────────────────────────────────────── */
 const fetchWithTimeout = async (
   url: string,
   options: RequestInit,
-  timeoutMs = 10000
+  timeoutMs = DEFAULT_TIMEOUT_MS
 ): Promise<Response> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  
   try {
     return await fetch(url, { ...options, signal: controller.signal });
   } finally {
@@ -51,14 +66,19 @@ const fetchWithTimeout = async (
   }
 };
 
+/* ─────────────────────────────────────────────
+   Turso Helper Functions
+   ───────────────────────────────────────────── */
 export const tursoHelpers = {
-    getConfig: (): TursoConfig => {
+  getConfig: (): TursoConfig => {
     try {
       const data = localStorage.getItem(CONFIG_KEY);
       const cfg = data ? JSON.parse(data) : { url: '', autoSync: false };
+      
       // التحقق من انتهاء صلاحية التوكن
       let token = '';
       const tokenRaw = sessionStorage.getItem(TOKEN_SESSION_KEY);
+      
       if (tokenRaw) {
         try {
           const tokenData = JSON.parse(tokenRaw);
@@ -71,15 +91,18 @@ export const tursoHelpers = {
           sessionStorage.removeItem(TOKEN_SESSION_KEY);
         }
       }
+      
       return { ...cfg, token };
     } catch (err) {
       if (import.meta.env.DEV) console.warn('[Turso] Failed to parse config:', err);
+      return { url: '', token: '', autoSync: false };
     }
-    return { url: '', token: '', autoSync: false };
+  },
 
-    saveConfig: (cfg: TursoConfig) => {
+  saveConfig: (cfg: TursoConfig): void => {
     const { token, ...safeConfig } = cfg;
     localStorage.setItem(CONFIG_KEY, JSON.stringify(safeConfig));
+    
     if (token) {
       // تخزين التوكن مع طابع زمني لانتهاء الصلاحية (8 ساعات)
       const tokenData = JSON.stringify({
@@ -90,43 +113,58 @@ export const tursoHelpers = {
     }
   },
 
-  clearToken: () => {
+  clearToken: (): void => {
     sessionStorage.removeItem(TOKEN_SESSION_KEY);
   },
 
   sanitizeUrl: (url: string): string => {
     let sanitized = url.trim();
+    
+    // تحويل libsql:// إلى https://
     if (sanitized.startsWith('libsql://')) {
       sanitized = sanitized.replace('libsql://', 'https://');
     }
+    
+    // تحويل http:// إلى https://
     if (sanitized.startsWith('http://')) {
       sanitized = sanitized.replace('http://', 'https://');
     }
+    
+    // إضافة https:// إذا لم يكن موجوداً
     if (!sanitized.startsWith('https://')) {
       sanitized = 'https://' + sanitized;
     }
-    if (sanitized.endsWith('/')) sanitized = sanitized.slice(0, -1);
-        // ✅ التحقق من أن الرابط ينتمي لنطاق Turso فقط
+    
+    // إزالة الشرطة المائلة الأخيرة
+    if (sanitized.endsWith('/')) {
+      sanitized = sanitized.slice(0, -1);
+    }
+    
+    // التحقق من أن الرابط ينتمي لنطاق Turso فقط
     try {
       const hostname = new URL(sanitized).hostname;
-      const isTursoDomain = hostname === 'turso.io' || 
-                            hostname.endsWith('.turso.io') ||
-                            hostname.endsWith('.turso.dev') ||
-                            hostname === 'api.turso.io';
+      const isTursoDomain = 
+        hostname === 'turso.io' || 
+        hostname.endsWith('.turso.io') ||
+        hostname.endsWith('.turso.dev') ||
+        hostname === 'api.turso.io';
+      
       if (!isTursoDomain) {
         throw new Error('رابط غير صالح: يجب أن ينتمي لنطاق turso.io أو turso.dev');
       }
     } catch (e) {
       throw new Error(e instanceof Error ? e.message : 'رابط قاعدة بيانات غير صالح');
     }
+    
     return sanitized;
   },
 
   /** Execute a batch of raw SQL statements against Turso HTTP Pipeline */
   executeBatch: async (
     config: TursoConfig,
-    statements: SQLStatement[]
-  ): Promise<any> => {
+    statements: SQLStatement[],
+    retryCount = 0
+  ): Promise<unknown> => {
     const url = `${tursoHelpers.sanitizeUrl(config.url)}/v2/pipeline`;
     
     const requests = statements.map(stmt => {
@@ -147,53 +185,59 @@ export const tursoHelpers = {
       };
     });
 
-    const response = await fetchWithTimeout(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ requests }),
-    }, 10000); // ✅ 10 ثواني كحد أقصى
+    try {
+      const response = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ requests }),
+      }, DEFAULT_TIMEOUT_MS);
 
-    if (!response.ok) {
-try {
-const errorBody = await response.text();
-// ✅ عدم تسجيل محتوى الخطأ الكامل — قد يحتوي معلومات حساسة
-if (import.meta.env.DEV && errorBody && errorBody.length < 500) {
-console.error('[Turso] Error response (first 500 chars):', errorBody.substring(0, 500));
-}
-} catch {
-// تجاهل الخطأ في قراءة الاستجابة
-}
-if (import.meta.env.DEV) console.error('[Turso] Request failed with status:', response.status);
-// ✅ رسالة عامة وآمنة — لا تكشف تفاصيل التطبيق
-const userMessage =
-response.status === 401 ? 'خطأ في المصادقة — تحقق من بيانات الاتصال' :
-response.status === 403 ? 'ليس لديك صلاحية الوصول إلى قاعدة البيانات' :
-response.status === 429 ? 'عدد محاولات كثير — انتظر بضع دقائق' :
-response.status >= 500 ? 'الخادم غير متاح حالياً' :
-'فشل الاتصال بقاعدة البيانات';
-throw new Error(userMessage);
-}
+      if (!response.ok) {
+        // عدم تسجيل محتوى الخطأ الكامل — قد يحتوي معلومات حساسة
+        if (import.meta.env.DEV && response.status) {
+          console.error('[Turso] Request failed with status:', response.status);
+        }
+        
+        // رسالة عامة وآمنة
+        const userMessage =
+          response.status === 401 ? 'خطأ في المصادقة — تحقق من بيانات الاتصال' :
+          response.status === 403 ? 'ليس لديك صلاحية الوصول إلى قاعدة البيانات' :
+          response.status === 429 ? 'عدد محاولات كثير — انتظر بضع دقائق' :
+          response.status >= 500 ? 'الخادم غير متاح حالياً' :
+          'فشل الاتصال بقاعدة البيانات';
+        
+        throw new Error(userMessage);
+      }
 
-
-    const result = await response.json();
-    
-    if (result.results) {
-      for (const res of result.results) {
-        if (res.type === 'error') {
-          throw new Error(res.error?.message || 'SQL execution error in batch');
+      const result = await response.json();
+      
+      if (result.results) {
+        for (const res of result.results) {
+          if (res.type === 'error') {
+            throw new Error(res.error?.message || 'SQL execution error in batch');
+          }
         }
       }
+      
+      return result;
+    } catch (err) {
+      // إعادة المحاولة للأخطاء المؤقتة
+      if (retryCount < MAX_RETRIES && err instanceof Error && 
+          (err.message.includes('network') || err.message.includes('timeout'))) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return tursoHelpers.executeBatch(config, statements, retryCount + 1);
+      }
+      throw err;
     }
-    
-    return result;
   },
 
   /** Test connection by executing a simple SELECT query */
   testConnection: async (config: TursoConfig): Promise<boolean> => {
     if (!config.url || !config.token) return false;
+    
     try {
       await tursoHelpers.executeBatch(config, [{ sql: 'SELECT 1' }]);
       return true;
@@ -204,7 +248,7 @@ throw new Error(userMessage);
   },
 
   /** Bootstrap database tables on Turso */
-  bootstrapTables: async (config: TursoConfig) => {
+  bootstrapTables: async (config: TursoConfig): Promise<void> => {
     await tursoHelpers.executeBatch(config, [
       { sql: `CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, data TEXT)` },
       { sql: `CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, data TEXT)` },
@@ -217,9 +261,10 @@ throw new Error(userMessage);
   syncNow: async (config: TursoConfig, showToast: (msg: string) => void): Promise<boolean> => {
     if (!config.url || !config.token) return false;
 
-    // ✅ Rate Limiting
+    // Rate Limiting
     if (!syncLimiter.isAllowed()) {
-      showToast('⏸️ الرجاء الانتظار قبل المزامنة مرة أخرى');
+      const remaining = Math.ceil(syncLimiter.getRemainingTime() / 1000);
+      showToast(`⏸️ الرجاء الانتظار ${remaining} ثانية قبل المزامنة مرة أخرى`);
       return false;
     }
 
@@ -235,7 +280,7 @@ throw new Error(userMessage);
       const localTasks = dbTasks.getAll();
       const localShopping = dbShopping.getAll();
 
-      showToast('📥 جاري تنزيل وتحديث البيانات السحابية...');
+      showToast('📥 جاري تنزيل البيانات السحابية...');
 
       // 3. Download remote records for all tables
       const downloadResult = await tursoHelpers.executeBatch(config, [
@@ -243,42 +288,33 @@ throw new Error(userMessage);
         { sql: 'SELECT id, data FROM events' },
         { sql: 'SELECT id, data FROM tasks' },
         { sql: 'SELECT id, data FROM shopping_lists' }
-      ]);
+      ]) as { results: unknown[] };
 
-      // ✅ مع تحقق إضافي من السلامة
-      const remoteNotes = mapRemoteRows<Note>(downloadResult.results[0]).filter(n => {
-  // التحقق من أن لكل ملاحظة معرف وحقول أساسية
-      return n && n.id && typeof n.id === 'string' && n.id.length > 0;
-      });
+      // مع تحقق إضافي من السلامة
+      const remoteNotes = mapRemoteRows<Note>(downloadResult.results[0]).filter(isValidEntity);
+      const remoteEvents = mapRemoteRows<AppEvent>(downloadResult.results[1]).filter(isValidEntity);
+      const remoteTasks = mapRemoteRows<AppTask>(downloadResult.results[2]).filter(isValidEntity);
+      const remoteShopping = mapRemoteRows<ShoppingList>(downloadResult.results[3]).filter(isValidEntity);
 
-      const remoteEvents = mapRemoteRows<AppEvent>(downloadResult.results[1]).filter(e =>
-        e && e.id && typeof e.id === 'string' && e.id.length > 0
-      );
-      const remoteTasks = mapRemoteRows<AppTask>(downloadResult.results[2]).filter(t =>
-        t && t.id && typeof t.id === 'string' && t.id.length > 0
-      );
-      const remoteShopping = mapRemoteRows<ShoppingList>(downloadResult.results[3]).filter(l =>
-        l && l.id && typeof l.id === 'string' && l.id.length > 0
-      );
-      // 4. Merge & Sync (Notes)
+      // 4. Merge & Sync
+      showToast('🔀 جاري دمج البيانات...');
+      
       const mergedNotes = mergeEntities(localNotes, remoteNotes);
-      dbNotes.replaceAll(mergedNotes);
+      await dbNotes.replaceAll(mergedNotes);
 
-      // 5. Merge & Sync (Events)
       const mergedEvents = mergeEntities(localEvents, remoteEvents);
-      dbEvents.replaceAll(mergedEvents);
+      await dbEvents.replaceAll(mergedEvents);
 
-      // 6. Merge & Sync (Tasks)
       const mergedTasks = mergeEntities(localTasks, remoteTasks);
-      dbTasks.replaceAll(mergedTasks);
+      await dbTasks.replaceAll(mergedTasks);
 
-      // 7. Merge & Sync (Shopping)
       const mergedShopping = mergeEntities(localShopping, remoteShopping);
-      dbShopping.replaceAll(mergedShopping);
+      await dbShopping.replaceAll(mergedShopping);
 
-      // 8. Upload merged entities back to Turso to ensure both sides are fully synced
-      showToast('📤 جاري رفع ومزامنة التغييرات المحلية...');
-      const uploadStatements: { sql: string; args?: any[] }[] = [];
+      // 5. Upload merged entities
+      showToast('📤 جاري رفع التغييرات...');
+      
+      const uploadStatements: SQLStatement[] = [];
 
       mergedNotes.forEach(n => {
         uploadStatements.push({
@@ -308,10 +344,9 @@ throw new Error(userMessage);
         });
       });
 
-      // Execute upload in batches of 50 to prevent huge payload issues
-      const batchSize = 50;
-      for (let i = 0; i < uploadStatements.length; i += batchSize) {
-        const batch = uploadStatements.slice(i, i + batchSize);
+      // Execute upload in batches
+      for (let i = 0; i < uploadStatements.length; i += BATCH_SIZE) {
+        const batch = uploadStatements.slice(i, i + BATCH_SIZE);
         await tursoHelpers.executeBatch(config, batch);
       }
 
@@ -329,57 +364,84 @@ throw new Error(userMessage);
    Internal Helper Functions
    ───────────────────────────────────────────── */
 
+/** التحقق من صحة الكيان */
+function isValidEntity<T extends { id: string }>(entity: T | null | undefined): entity is T {
+  return entity !== null && 
+         entity !== undefined && 
+         !!entity.id && 
+         typeof entity.id === 'string' && 
+         entity.id.length > 0;
+}
+
 /** Helper to convert LibSQL HTTP row schema to structured objects */
-function mapRemoteRows<T extends { id: string }>(res: any): T[] {
-if (!res || !res.response || !res.response.result || !res.response.result.rows) return [];
-const rows = res.response.result.rows;
-return rows.flatMap((row: any[]) => {
-try {
-const dataValue = row[1]?.value;
-if (typeof dataValue !== 'string') return [];
-const parsed = JSON.parse(dataValue) as T;
-// ✅ التحقق من وجود معرف فريد وصحة البنية الأساسية
-if (!parsed.id || typeof parsed.id !== 'string') return [];
-// ✅ إزالة أي حقول مريبة قد تحتوي على أكواد برمجية
-const sanitized = sanitizeEntity(parsed);
-return [sanitized];
-} catch (err) {
-if (import.meta.env.DEV) console.warn('[Turso] Failed to parse row:', err);
-return [];
-}
-});
-}
-
-// ✅ دالة تنظيف البيانات من الحقول الخطيرة
-function sanitizeEntity<T extends { id: string }>(entity: any): T {
-if (!entity || typeof entity !== 'object') {
-throw new Error('Invalid entity provided to sanitizeEntity');
-}
-const allowedKeys = ['id', 'title', 'content', 'category', 'color', 'createdAt', 'updatedAt',
-'isPinned', 'isFavorite', 'isArchived', 'isTrash', 'isLocked', 'isCompleted', 'checklist',
-'reminder', 'priority', 'dueDate', 'reminderAt', 'description', 'items', 'totalBudget', 
-'totalSpent', 'deletedAt', 'name', 'store', 'budget', 'allDay', 'startDatetime', 
-'endDatetime', 'location', 'repeat', 'color', 'qty', 'unit', 'price', 'note', 
-'checked', 'addedAt', 'text', 'completed'];
-const sanitized: any = {};
-for (const key of allowedKeys) {
-if (key in entity) {
-const value = entity[key];
-// تحقق من نوع البيانات الأساسي
-if (typeof value === 'string' && value.length > 100000) {
-if (import.meta.env.DEV) console.warn(`[Sanitize] Field "${key}" exceeds maximum length`);
-continue;
-}
-sanitized[key] = value;
-}
-}
-// تأكد من وجود id (الحقل الإلزامي)
-if (!sanitized.id || typeof sanitized.id !== 'string') {
-throw new Error('Entity must have a valid id field');
-}
-return sanitized as T;
+function mapRemoteRows<T extends { id: string }>(res: unknown): T[] {
+  if (!res || typeof res !== 'object') return [];
+  
+  const result = res as { response?: { result?: { rows?: unknown[] } } };
+  if (!result.response?.result?.rows) return [];
+  
+  const rows = result.response.result.rows as unknown[][];
+  
+  return rows.flatMap((row: unknown[]) => {
+    try {
+      if (!Array.isArray(row) || row.length < 2) return [];
+      
+      const dataValue = (row[1] as { value?: string })?.value;
+      if (typeof dataValue !== 'string') return [];
+      
+      const parsed = JSON.parse(dataValue) as T;
+      
+      // التحقق من وجود معرف فريد
+      if (!parsed.id || typeof parsed.id !== 'string') return [];
+      
+      // تنظيف البيانات
+      const sanitized = sanitizeEntity(parsed);
+      return isValidEntity(sanitized) ? [sanitized] : [];
+    } catch (err) {
+      if (import.meta.env.DEV) console.warn('[Turso] Failed to parse row:', err);
+      return [];
+    }
+  });
 }
 
+/** دالة تنظيف البيانات من الحقول الخطيرة */
+function sanitizeEntity<T extends { id: string }>(entity: T): T {
+  if (!entity || typeof entity !== 'object') {
+    return entity;
+  }
+  
+  const allowedKeys = new Set([
+    'id', 'title', 'content', 'category', 'color', 'createdAt', 'updatedAt',
+    'isPinned', 'isFavorite', 'isArchived', 'isTrash', 'isLocked', 'isCompleted', 
+    'checklist', 'reminder', 'priority', 'dueDate', 'reminderAt', 'description', 
+    'items', 'totalBudget', 'totalSpent', 'deletedAt', 'name', 'store', 'budget', 
+    'allDay', 'startDatetime', 'endDatetime', 'location', 'repeat', 'qty', 'unit', 
+    'price', 'note', 'checked', 'addedAt', 'text', 'completed', 'type', 'datetime'
+  ]);
+  
+  const sanitized: Record<string, unknown> = {};
+  
+  for (const key of Object.keys(entity)) {
+    if (allowedKeys.has(key)) {
+      const value = (entity as Record<string, unknown>)[key];
+      
+      // تحقق من طول النصوص
+      if (typeof value === 'string' && value.length > 100000) {
+        if (import.meta.env.DEV) console.warn(`[Sanitize] Field "${key}" exceeds maximum length`);
+        continue;
+      }
+      
+      sanitized[key] = value;
+    }
+  }
+  
+  // تأكد من وجود id
+  if (!sanitized.id || typeof sanitized.id !== 'string') {
+    return entity; // أرجع الأصلي إذا فشل التنظيف
+  }
+  
+  return sanitized as T;
+}
 
 /** Merges local and remote entities based on updatedAt timestamp */
 function mergeEntities<T extends { id: string; updatedAt: string }>(
@@ -388,20 +450,28 @@ function mergeEntities<T extends { id: string; updatedAt: string }>(
   deletedIds?: Set<string>
 ): T[] {
   const mergedMap = new Map<string, T>();
+  
+  // أضف البيانات المحلية
   local.forEach(item => mergedMap.set(item.id, item));
+  
+  // ادمج مع البيانات البعيدة
   remote.forEach(remoteItem => {
     // تجاهل العناصر المحذوفة محلياً
     if (deletedIds?.has(remoteItem.id)) return;
+    
     const localItem = mergedMap.get(remoteItem.id);
     if (!localItem) {
       mergedMap.set(remoteItem.id, remoteItem);
     } else {
       const localTime = new Date(localItem.updatedAt).getTime();
       const remoteTime = new Date(remoteItem.updatedAt).getTime();
+      
+      // استخدم الأحدث
       if (remoteTime > localTime) {
         mergedMap.set(remoteItem.id, remoteItem);
       }
     }
   });
+  
   return Array.from(mergedMap.values());
 }

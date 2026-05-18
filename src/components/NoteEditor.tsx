@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Note, NoteCategory, NoteColor, ChecklistItem, ReminderData, ReminderType } from '../types';
 import { CATEGORY_LABELS, COLOR_CLASSES } from '../data/initialNotes';
 import DOMPurify from 'dompurify';
@@ -31,18 +31,19 @@ interface NoteEditorProps {
   showToast: (msg: string) => void;
 }
 
-const toLocalDateTimeInput = (iso?: string) => {
+// Helper functions moved outside component
+const toLocalDateTimeInput = (iso?: string): string => {
   if (!iso) return '';
   const d = new Date(iso);
   const tzOffset = d.getTimezoneOffset() * 60000;
   return new Date(d.getTime() - tzOffset).toISOString().slice(0, 16);
 };
 
-const fromLocalDateTimeInput = (value?: string) => {
+const fromLocalDateTimeInput = (value?: string): string | undefined => {
   return value ? new Date(value).toISOString() : undefined;
 };
 
-const formatReminderPreview = (iso?: string) => {
+const formatReminderPreview = (iso?: string): string => {
   if (!iso) return '';
   return new Date(iso).toLocaleString('ar-EG', {
     weekday: 'short',
@@ -52,6 +53,32 @@ const formatReminderPreview = (iso?: string) => {
     minute: '2-digit',
     hour12: true,
   });
+};
+
+// DOMPurify configuration - centralized for consistency
+const DOMPURIFY_CONFIG = {
+  ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'p', 'br',
+                 'ul', 'ol', 'li', 'h1', 'h2', 'h3',
+                 'blockquote', 'code', 'pre', 'span', 'a'],
+  ALLOWED_ATTR: ['class', 'href', 'target', 'rel'],
+  FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'style'],
+  FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'style'],
+};
+
+// Get default settings from localStorage
+const getDefaultSettings = () => {
+  try {
+    const saved = localStorage.getItem('notes_app_settings_v1');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return {
+        defaultColor: parsed.defaultColor as NoteColor || 'amber',
+      };
+    }
+  } catch {
+    // Ignore errors
+  }
+  return { defaultColor: 'amber' as NoteColor };
 };
 
 export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, showToast }) => {
@@ -93,6 +120,14 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
   const editorRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
+  // Memoize default settings
+  const defaultSettings = useMemo(() => getDefaultSettings(), []);
+
+  // Memoize static data
+  const categories: NoteCategory[] = useMemo(() => ['work', 'personal', 'ideas', 'study'], []);
+  const colors: NoteColor[] = useMemo(() => ['amber', 'emerald', 'sky', 'rose', 'purple', 'slate'], []);
+
+  // Initialize note data
   useEffect(() => {
     if (note) {
       resetTitle(note.title);
@@ -119,35 +154,20 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
       setEventEndInput('');
       setEventLocation('');
       setEventNote('');
-      // Read default note color from settings dynamically
-      let defaultNoteColor: NoteColor = 'amber';
-      try {
-        const saved = localStorage.getItem('notes_app_settings_v1');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (parsed.defaultColor) defaultNoteColor = parsed.defaultColor as NoteColor;
-        }
-      } catch {}
-      setColor(defaultNoteColor);
+      setColor(defaultSettings.defaultColor);
     }
-  }, [note]);
+  }, [note, resetTitle, resetContent, defaultSettings.defaultColor]);
 
+  // Update editor content with sanitized HTML
   useEffect(() => {
     if (editorRef.current) {
-      // ✅ تعقيم HTML قبل الإدراج لمنع XSS
-        const sanitized = DOMPurify.sanitize(content, {
-        ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'p', 'br',
-                       'ul', 'ol', 'li', 'h1', 'h2', 'h3',
-                       'blockquote', 'code', 'pre', 'span', 'a'],
-        ALLOWED_ATTR: ['class', 'href', 'target', 'rel'],
-        FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'style'],
-        FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'style'],
-      });
+      const sanitized = DOMPurify.sanitize(content, DOMPURIFY_CONFIG);
       editorRef.current.innerHTML = sanitized;
     }
   }, [content]);
 
-  const handleSimulateVoice = () => {
+  // Memoized handlers
+  const handleSimulateVoice = useCallback(() => {
     setIsRecording(true);
     showToast('جاري تسجيل الملاحظة الصوتية...');
 
@@ -161,19 +181,19 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
     setTimeout(() => {
       const randomTemplate = voiceTemplates[Math.floor(Math.random() * voiceTemplates.length)];
       const voiceHtml = `<p class="text-amber-300">🎙️ <em>${randomTemplate}</em></p>`;
-      setContent(prev => (prev ? `${prev}${voiceHtml}` : voiceHtml), { immediate: true });
+      setContent(prev => (prev ? `${prev}${voiceHtml}` : voiceHtml));
       if (!title) setTitle('🎙️ ملاحظة صوتية');
       setIsRecording(false);
       showToast('تم تحويل الصوت إلى نص منسق بنجاح!');
     }, 2000);
-  };
+  }, [showToast, title, setContent, setTitle]);
 
-  const handleAddChecklist = (e?: React.FormEvent) => {
+  const handleAddChecklist = useCallback((e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!newChecklistItem.trim()) return;
 
-    setChecklist([
-      ...checklist,
+    setChecklist(prev => [
+      ...prev,
       {
         id: uid(),
         text: newChecklistItem.trim(),
@@ -181,26 +201,32 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
       },
     ]);
     setNewChecklistItem('');
-  };
+  }, [newChecklistItem]);
 
-  const toggleChecklist = (id: string) => {
-    setChecklist(checklist.map(item => (item.id === id ? { ...item, completed: !item.completed } : item)));
-  };
+  const toggleChecklist = useCallback((id: string) => {
+    setChecklist(prev => prev.map(item => 
+      item.id === id ? { ...item, completed: !item.completed } : item
+    ));
+  }, []);
 
-  const removeChecklist = (id: string) => {
-    setChecklist(checklist.filter(item => item.id !== id));
-    if (editingTaskReminderId === id) setEditingTaskReminderId(null);
-  };
+  const removeChecklist = useCallback((id: string) => {
+    setChecklist(prev => prev.filter(item => item.id !== id));
+    setEditingTaskReminderId(prev => prev === id ? null : prev);
+  }, []);
 
-  const setTaskReminder = (id: string, localValue: string) => {
-    setChecklist(checklist.map(item => item.id === id ? { ...item, reminderAt: fromLocalDateTimeInput(localValue) } : item));
-  };
+  const setTaskReminder = useCallback((id: string, localValue: string) => {
+    setChecklist(prev => prev.map(item => 
+      item.id === id ? { ...item, reminderAt: fromLocalDateTimeInput(localValue) } : item
+    ));
+  }, []);
 
-  const clearTaskReminder = (id: string) => {
-    setChecklist(checklist.map(item => item.id === id ? { ...item, reminderAt: undefined } : item));
-  };
+  const clearTaskReminder = useCallback((id: string) => {
+    setChecklist(prev => prev.map(item => 
+      item.id === id ? { ...item, reminderAt: undefined } : item
+    ));
+  }, []);
 
-  const getReminderPayload = (): ReminderData | undefined => {
+  const getReminderPayload = useCallback((): ReminderData | undefined => {
     if (!showReminderPanel || !reminderAtInput) return undefined;
 
     const payload: ReminderData = {
@@ -215,9 +241,9 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
     }
 
     return payload;
-  };
+  }, [showReminderPanel, reminderAtInput, reminderType, eventEndInput, eventLocation, eventNote]);
 
-  const handleSave = () => {
+  const handleSave = useCallback(() => {
     const cleanContent = content.replace(/<p><br><\/p>/g, '').trim();
 
     if (!title.trim() && !cleanContent && checklist.length === 0) {
@@ -233,36 +259,36 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
       checklist: checklist.length > 0 ? checklist : undefined,
       reminder: getReminderPayload(),
     });
-  };
+  }, [content, title, checklist, category, color, getReminderPayload, onSave, showToast]);
 
-  const handleCopy = () => {
-    // ✅ تعقيم أولاً ثم استخراج النص
+  const handleCopy = useCallback(() => {
     const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = DOMPurify.sanitize(content, {
-      ALLOWED_TAGS: [],
-      ALLOWED_ATTR: [],
-    });
+    tempDiv.innerHTML = DOMPurify.sanitize(content, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
     let plainText = tempDiv.textContent || tempDiv.innerText || '';
 
+    const reminderPayload = getReminderPayload();
     let copyText = `${title}\n\n${plainText}`;
-    if (getReminderPayload()) {
-      copyText += `\n\n⏰ التذكير: ${formatReminderPreview(getReminderPayload()?.datetime)}`;
-      if (getReminderPayload()?.type === 'event' && getReminderPayload()?.endDatetime) {
-        copyText += `\n🏁 نهاية الحدث: ${formatReminderPreview(getReminderPayload()?.endDatetime)}`;
+    
+    if (reminderPayload) {
+      copyText += `\n\n⏰ التذكير: ${formatReminderPreview(reminderPayload.datetime)}`;
+      if (reminderPayload.type === 'event' && reminderPayload.endDatetime) {
+        copyText += `\n🏁 نهاية الحدث: ${formatReminderPreview(reminderPayload.endDatetime)}`;
       }
-      if (getReminderPayload()?.location) {
-        copyText += `\n📍 المكان: ${getReminderPayload()?.location}`;
+      if (reminderPayload.location) {
+        copyText += `\n📍 المكان: ${reminderPayload.location}`;
       }
     }
+    
     if (checklist.length > 0) {
       copyText += '\n\nقائمة المهام:\n' + checklist.map(c => {
         const reminderText = c.reminderAt ? ` (⏰ ${formatReminderPreview(c.reminderAt)})` : '';
         return `${c.completed ? '✅' : '⬜'} ${c.text}${reminderText}`;
       }).join('\n');
     }
+    
     navigator.clipboard.writeText(copyText);
     showToast('تم نسخ الملاحظة للحافظة');
-  };
+  }, [content, title, getReminderPayload, checklist, showToast]);
 
   const applyFormat = useCallback((action: FormatAction) => {
     if (activeField !== 'content') return;
@@ -280,7 +306,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
       case 'link': {
         const url = prompt('أدخل عنوان الرابط الإلكتروني (URL):', 'https://');
         if (url) {
-          // ✅ التحقق من مخطط الرابط لمنع javascript: URLs
           const lowerUrl = url.trim().toLowerCase();
           if (lowerUrl.startsWith('javascript:') || lowerUrl.startsWith('data:') || lowerUrl.startsWith('vbscript:')) {
             showToast('❌ مخطط الرابط غير مسموح به لأسباب أمنية');
@@ -293,9 +318,9 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
     }
 
     if (editorRef.current) {
-      setContent(editorRef.current.innerHTML, { immediate: true });
+      setContent(editorRef.current.innerHTML);
     }
-  }, [activeField, setContent]);
+  }, [activeField, setContent, showToast]);
 
   const handleUndo = useCallback(() => {
     if (activeField === 'title') undoTitle();
@@ -307,6 +332,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
     else redoContent();
   }, [activeField, redoTitle, redoContent]);
 
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       const tag = (document.activeElement as HTMLElement)?.tagName;
@@ -329,10 +355,21 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
     return () => window.removeEventListener('keydown', handleKey);
   }, [handleUndo, handleRedo]);
 
-  const categories: NoteCategory[] = ['work', 'personal', 'ideas', 'study'];
-  const colors: NoteColor[] = ['amber', 'emerald', 'sky', 'rose', 'purple', 'slate'];
-  const currentColorStyle = COLOR_CLASSES[color] || COLOR_CLASSES.slate;
-  const taskReminderCount = checklist.filter(item => !!item.reminderAt).length;
+  // Memoized derived values
+  const currentColorStyle = useMemo(() => 
+    COLOR_CLASSES[color] || COLOR_CLASSES.slate, 
+    [color]
+  );
+
+  const taskReminderCount = useMemo(() => 
+    checklist.filter(item => !!item.reminderAt).length, 
+    [checklist]
+  );
+
+  const reminderPreviewText = useMemo(() => {
+    if (!reminderAtInput) return null;
+    return formatReminderPreview(fromLocalDateTimeInput(reminderAtInput));
+  }, [reminderAtInput]);
 
   return (
     <div className="fixed inset-0 bg-slate-950 z-30 flex flex-col animate-slideUp select-none overflow-hidden">
@@ -507,9 +544,9 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
                 )}
               </div>
 
-              {reminderAtInput && (
+              {reminderPreviewText && (
                 <div className="text-[10px] text-sky-300 bg-sky-500/10 border border-sky-500/20 rounded-xl p-2">
-                  {reminderType === 'event' ? '📅' : '⏰'} سيتم التذكير في {formatReminderPreview(fromLocalDateTimeInput(reminderAtInput))}
+                  {reminderType === 'event' ? '📅' : '⏰'} سيتم التذكير في {reminderPreviewText}
                   {reminderType === 'event' && eventEndInput && (
                     <span> — ينتهي في {formatReminderPreview(fromLocalDateTimeInput(eventEndInput))}</span>
                   )}
@@ -674,7 +711,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
                 </span>
                 <button
                   type="button"
-                  onClick={() => setChecklist(checklist.filter(c => !c.completed))}
+                  onClick={() => setChecklist(prev => prev.filter(c => !c.completed))}
                   className="text-amber-500 hover:underline"
                 >
                   حذف المكتمل
@@ -749,7 +786,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
             <button
               type="button"
               onClick={handleCopy}
-              className="flex-1 bg-slate-900 hover:bg-slate-850 text-slate-300 py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 border border-slate-800"
+              className="flex-1 bg-slate-900 hover:bg-slate-800 text-slate-300 py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 border border-slate-800"
             >
               <Copy size={13} />
               <span>نسخ الملاحظة</span>
@@ -759,10 +796,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
               onClick={() => {
                 if (navigator.share) {
                   const tempDiv = document.createElement('div');
-                  tempDiv.innerHTML = DOMPurify.sanitize(content, {
-                    ALLOWED_TAGS: [],
-                    ALLOWED_ATTR: [],
-                  });
+                  tempDiv.innerHTML = DOMPurify.sanitize(content, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
                   navigator.share({
                     title: title,
                     text: tempDiv.textContent || tempDiv.innerText || ''
@@ -772,7 +806,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
                   showToast('تم نسخ الملاحظة للمشاركة');
                 }
               }}
-              className="bg-slate-900 hover:bg-slate-850 text-slate-300 px-3 rounded-xl text-xs flex items-center justify-center border border-slate-800"
+              className="bg-slate-900 hover:bg-slate-800 text-slate-300 px-3 rounded-xl text-xs flex items-center justify-center border border-slate-800"
               title="مشاركة"
             >
               <Share2 size={13} />

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { Note } from '../types';
 import { CATEGORY_LABELS, COLOR_CLASSES } from '../data/initialNotes';
 import DOMPurify from 'dompurify';
@@ -30,7 +30,8 @@ interface NoteCardProps {
   isCompact?: boolean;
 }
 
-const formatReminder = (iso?: string) => {
+// Move helper function outside component to prevent recreation
+const formatReminder = (iso?: string): string => {
   if (!iso) return '';
   return new Date(iso).toLocaleString('ar-EG', {
     month: 'short',
@@ -39,6 +40,20 @@ const formatReminder = (iso?: string) => {
     minute: '2-digit',
     hour12: true,
   });
+};
+
+// Get app settings from localStorage
+const getAppSettings = () => {
+  try {
+    const saved = localStorage.getItem('notes_app_settings_v1');
+    if (saved) return JSON.parse(saved);
+  } catch {
+    // Ignore errors
+  }
+  return {
+    defaultFontSize: 'base',
+    listItemHeight: 'normal'
+  };
 };
 
 export const NoteCard: React.FC<NoteCardProps> = ({
@@ -51,33 +66,102 @@ export const NoteCard: React.FC<NoteCardProps> = ({
   onDelete,
   onRestore,
   viewMode = 'grid',
+  isCompact = false,
 }) => {
   const colorStyle = COLOR_CLASSES[note.color] || COLOR_CLASSES.slate;
-  const totalItems = note.checklist?.length || 0;
-  const completedItems = note.checklist?.filter(item => item.completed).length || 0;
-  const taskReminderCount = note.checklist?.filter(item => !!item.reminderAt).length || 0;
+  
+  // Memoize calculations
+  const checklistStats = useMemo(() => {
+    const totalItems = note.checklist?.length || 0;
+    const completedItems = note.checklist?.filter(item => item.completed).length || 0;
+    const taskReminderCount = note.checklist?.filter(item => !!item.reminderAt).length || 0;
+    return { totalItems, completedItems, taskReminderCount };
+  }, [note.checklist]);
+
   const hasNoteReminder = !!note.reminder?.datetime;
 
-  const formattedDate = new Date(note.updatedAt).toLocaleDateString('ar-EG', {
-    month: 'short',
-    day: 'numeric'
-  });
+  const formattedDate = useMemo(() => {
+    return new Date(note.updatedAt).toLocaleDateString('ar-EG', {
+      month: 'short',
+      day: 'numeric'
+    });
+  }, [note.updatedAt]);
 
-  const getDaysUntilDeletion = () => {
+  const daysUntilDeletion = useMemo(() => {
     if (!note.deletedAt) return null;
     const deleted = new Date(note.deletedAt);
     const thirtyDaysLater = new Date(deleted);
     thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30);
     const daysLeft = Math.ceil((thirtyDaysLater.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
     return Math.max(0, daysLeft);
-  };
-  const daysUntilDeletion = getDaysUntilDeletion();
+  }, [note.deletedAt]);
+
+  // Memoize event handlers
+  const handleSelect = useCallback(() => {
+    onSelect(note);
+  }, [note, onSelect]);
+
+  const handleToggleFavorite = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggleFavorite(note.id, e);
+  }, [note.id, onToggleFavorite]);
+
+  const handleTogglePin = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onTogglePin(note.id, e);
+  }, [note.id, onTogglePin]);
+
+  const handleToggleLock = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggleLock?.(note.id, e);
+  }, [note.id, onToggleLock]);
+
+  const handleArchive = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onArchive(note.id, e);
+  }, [note.id, onArchive]);
+
+  const handleDelete = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onDelete(note.id, e);
+  }, [note.id, onDelete]);
+
+  const handleRestore = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onRestore?.(note.id, e);
+  }, [note.id, onRestore]);
+
+  const { totalItems, completedItems, taskReminderCount } = checklistStats;
+
+  // Get settings once
+  const appSettings = useMemo(() => getAppSettings(), []);
+
+  // Font Size mapping
+  const fontSizeClass: Record<string, string> = useMemo(() => ({
+    sm: 'text-[10px]',
+    base: 'text-xs',
+    lg: 'text-sm',
+    xl: 'text-base'
+  }), []);
+
+  // List Item Height mapping
+  const itemHeightClass: Record<string, string> = useMemo(() => ({
+    normal: 'p-3.5',
+    small: 'p-2.5',
+    tiny: 'p-1.5'
+  }), []);
+
+  const currentFontSize = fontSizeClass[appSettings.defaultFontSize] || 'text-xs';
+  const currentItemHeight = itemHeightClass[appSettings.listItemHeight] || 'p-3.5';
 
   // Compact list view
-  if (viewMode === 'list') {
+  if (viewMode === 'list' || isCompact) {
     return (
       <div
-        onClick={() => onSelect(note)}
+        onClick={handleSelect}
+        onKeyDown={(e) => e.key === 'Enter' && handleSelect()}
+        role="button"
+        tabIndex={0}
         className={`rounded-xl border transition-all cursor-pointer flex items-center justify-between p-2.5 gap-2 ${colorStyle.bg} ${colorStyle.border}`}
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -98,22 +182,24 @@ export const NoteCard: React.FC<NoteCardProps> = ({
           )}
         </div>
 
-        <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-1 shrink-0">
           {hasNoteReminder && <Bell size={11} className="text-sky-400 ml-0.5" />}
           {taskReminderCount > 0 && <ListTodo size={11} className="text-purple-400 ml-0.5" />}
           <button
-            onClick={(e) => onToggleFavorite(note.id, e)}
+            onClick={handleToggleFavorite}
             className="p-1 text-slate-500 hover:text-amber-400 transition-colors"
             title="تفضيل"
+            aria-label={note.isFavorite ? 'إزالة من المفضلة' : 'إضافة للمفضلة'}
           >
             <Star size={13} className={note.isFavorite ? 'text-amber-400 fill-amber-400' : ''} />
           </button>
 
-          {!note.isArchived && (
+          {!note.isArchived && !note.isTrash && (
             <button
-              onClick={(e) => onTogglePin(note.id, e)}
+              onClick={handleTogglePin}
               className="p-1 text-slate-500 hover:text-white transition-colors"
               title={note.isPinned ? 'إلغاء التثبيت' : 'تثبيت'}
+              aria-label={note.isPinned ? 'إلغاء التثبيت' : 'تثبيت'}
             >
               <Pin size={13} className={note.isPinned ? 'text-white fill-white rotate-45' : ''} />
             </button>
@@ -125,63 +211,62 @@ export const NoteCard: React.FC<NoteCardProps> = ({
     );
   }
 
- const appSettings = React.useMemo(() => {
-    try {
-      const saved = localStorage.getItem('notes_app_settings_v1');
-      if (saved) return JSON.parse(saved);
-    } catch {}
+  // Calculate classes based on view mode
+  const { titleClass, contentLineClamp, paddingClass } = useMemo(() => {
+    if (viewMode === 'details') {
+      const detailSizeClass: Record<string, string> = {
+        sm: 'text-xs',
+        base: 'text-sm',
+        lg: 'text-base',
+        xl: 'text-lg'
+      };
+      return {
+        titleClass: `${detailSizeClass[appSettings.defaultFontSize] || 'text-sm'} font-extrabold`,
+        contentLineClamp: 'line-clamp-4',
+        paddingClass: appSettings.listItemHeight === 'tiny' ? 'p-2' : appSettings.listItemHeight === 'small' ? 'p-3' : 'p-4'
+      };
+    }
+    
+    if (viewMode === 'large_grid') {
+      const largeSizeClass: Record<string, string> = {
+        sm: 'text-xs',
+        base: 'text-sm',
+        lg: 'text-base',
+        xl: 'text-lg'
+      };
+      return {
+        titleClass: `${largeSizeClass[appSettings.defaultFontSize] || 'text-sm'} font-bold`,
+        contentLineClamp: 'line-clamp-5',
+        paddingClass: appSettings.listItemHeight === 'tiny' ? 'p-2.5' : appSettings.listItemHeight === 'small' ? 'p-3.5' : 'p-4.5'
+      };
+    }
+
     return {
-      defaultFontSize: 'base',
-      listItemHeight: 'normal'
+      titleClass: `${currentFontSize} font-bold`,
+      contentLineClamp: 'line-clamp-2',
+      paddingClass: currentItemHeight
     };
-  }, []);
+  }, [viewMode, appSettings.defaultFontSize, appSettings.listItemHeight, currentFontSize, currentItemHeight]);
 
-  // 1. Font Size mapping
-  const fontSizeClass: Record<string, string> = {
-    sm: 'text-[10px]',
-    base: 'text-xs',
-    lg: 'text-sm',
-    xl: 'text-base'
-  };
-  const currentFontSize = fontSizeClass[appSettings.defaultFontSize] || 'text-xs';
-
-  // 2. List Item Height mapping
-  const itemHeightClass: Record<string, string> = {
-    normal: 'p-3.5',
-    small: 'p-2.5',
-    tiny: 'p-1.5'
-  };
-  const currentItemHeight = itemHeightClass[appSettings.listItemHeight] || 'p-3.5';
-
-  let titleClass = `${currentFontSize} font-bold`;
-  let contentLineClamp = 'line-clamp-2';
-  let paddingClass = currentItemHeight;
-
-  if (viewMode === 'details') {
-    const detailSizeClass: Record<string, string> = {
-      sm: 'text-xs',
-      base: 'text-sm',
-      lg: 'text-base',
-      xl: 'text-lg'
-    };
-    titleClass = `${detailSizeClass[appSettings.defaultFontSize] || 'text-sm'} font-extrabold`;
-    contentLineClamp = 'line-clamp-4';
-    paddingClass = appSettings.listItemHeight === 'tiny' ? 'p-2' : appSettings.listItemHeight === 'small' ? 'p-3' : 'p-4';
-  } else if (viewMode === 'large_grid') {
-    const largeSizeClass: Record<string, string> = {
-      sm: 'text-xs',
-      base: 'text-sm',
-      lg: 'text-base',
-      xl: 'text-lg'
-    };
-    titleClass = `${largeSizeClass[appSettings.defaultFontSize] || 'text-sm'} font-bold`;
-    contentLineClamp = 'line-clamp-5';
-    paddingClass = appSettings.listItemHeight === 'tiny' ? 'p-2.5' : appSettings.listItemHeight === 'small' ? 'p-3.5' : 'p-4.5';
-  }
+  // Sanitize content for display
+  const sanitizedContent = useMemo(() => {
+    if (!note.content || note.isLocked) return '';
+    return DOMPurify.sanitize(note.content, {
+      ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'p', 'br',
+                     'ul', 'ol', 'li', 'h1', 'h2', 'h3',
+                     'blockquote', 'code', 'pre', 'span'],
+      ALLOWED_ATTR: ['class'],
+      FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'style'],
+      FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'style'],
+    });
+  }, [note.content, note.isLocked]);
 
   return (
     <div
-      onClick={() => onSelect(note)}
+      onClick={handleSelect}
+      onKeyDown={(e) => e.key === 'Enter' && handleSelect()}
+      role="button"
+      tabIndex={0}
       className={`rounded-2xl border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ${colorStyle.bg} ${colorStyle.border} ${paddingClass} ${note.isTrash ? 'opacity-75 grayscale-[0.3]' : ''}`}
     >
       {note.isLocked && (
@@ -224,30 +309,33 @@ export const NoteCard: React.FC<NoteCardProps> = ({
           )}
         </div>
 
-        <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-1 shrink-0">
           <button
-            onClick={(e) => onToggleFavorite(note.id, e)}
+            onClick={handleToggleFavorite}
             className="p-1 text-slate-400 hover:text-amber-400 transition-colors rounded-lg"
             title="تفضيل"
+            aria-label={note.isFavorite ? 'إزالة من المفضلة' : 'إضافة للمفضلة'}
           >
             <Star size={15} className={note.isFavorite ? 'text-amber-400 fill-amber-400' : ''} />
           </button>
 
           {!note.isArchived && !note.isTrash && onToggleLock && (
             <button
-              onClick={(e) => onToggleLock(note.id, e)}
+              onClick={handleToggleLock}
               className="p-1 text-slate-400 hover:text-sky-400 transition-colors rounded-lg"
               title={note.isLocked ? 'إلغاء القفل' : 'قفل الملاحظة'}
+              aria-label={note.isLocked ? 'إلغاء القفل' : 'قفل الملاحظة'}
             >
               <LockIcon size={15} className={note.isLocked ? 'text-sky-400 fill-sky-400' : ''} />
             </button>
           )}
 
-          {!note.isArchived && (
+          {!note.isArchived && !note.isTrash && (
             <button
-              onClick={(e) => onTogglePin(note.id, e)}
+              onClick={handleTogglePin}
               className="p-1 text-slate-400 hover:text-white transition-colors rounded-lg"
               title={note.isPinned ? 'إلغاء التثبيت' : 'تثبيت'}
+              aria-label={note.isPinned ? 'إلغاء التثبيت' : 'تثبيت'}
             >
               <Pin size={15} className={note.isPinned ? 'text-white fill-white rotate-45' : ''} />
             </button>
@@ -267,19 +355,9 @@ export const NoteCard: React.FC<NoteCardProps> = ({
             <span>ملاحظة مقفلة - اضغط لإدخال الرقم السري</span>
           </div>
         ) : note.content ? (
-
           <div
             className={`${currentFontSize} text-slate-300 ${contentLineClamp} leading-relaxed font-light overflow-hidden rich-text-preview`}
-            dangerouslySetInnerHTML={{
-              __html: DOMPurify.sanitize(note.content, {
-                ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'p', 'br',
-                               'ul', 'ol', 'li', 'h1', 'h2', 'h3',
-                               'blockquote', 'code', 'pre', 'span'],
-                ALLOWED_ATTR: ['class'],
-                FORBID_TAGS: ['script', 'iframe', 'object', 'embed'],
-                FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
-              })
-            }}
+            dangerouslySetInnerHTML={{ __html: sanitizedContent }}
           />
         ) : totalItems === 0 ? (
           <span className="italic text-slate-500 text-[10px]">فارغة...</span>
@@ -292,7 +370,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
           </div>
         )}
 
-        {viewMode === 'details' && note.checklist && note.checklist.length > 0 && (
+        {viewMode === 'details' && note.checklist && note.checklist.length > 0 && !note.isLocked && (
           <div className="mt-2.5 space-y-1 border-t border-slate-700/30 pt-2">
             {note.checklist.slice(0, 3).map(item => (
               <div key={item.id} className="flex items-center gap-1.5 text-[11px] text-slate-300">
@@ -305,10 +383,13 @@ export const NoteCard: React.FC<NoteCardProps> = ({
                 {item.reminderAt && <Bell size={10} className="text-sky-400 shrink-0" />}
               </div>
             ))}
+            {note.checklist.length > 3 && (
+              <span className="text-[10px] text-slate-500">+{note.checklist.length - 3} مهام أخرى</span>
+            )}
           </div>
         )}
 
-        {totalItems > 0 && (
+        {totalItems > 0 && !note.isLocked && (
           <div className="mt-2.5 flex items-center gap-1.5 text-[10px] text-slate-400 bg-slate-900/40 px-2 py-1 rounded-md w-fit">
             <CheckSquare size={12} className="text-amber-400" />
             <span>{completedItems} / {totalItems} مكتمل</span>
@@ -325,12 +406,12 @@ export const NoteCard: React.FC<NoteCardProps> = ({
       <div className="flex items-center justify-between text-[10px] text-slate-500 pt-2 border-t border-slate-700/30">
         <span>{formattedDate}</span>
 
-        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-1">
           {note.isTrash ? (
             <>
               {onRestore && (
                 <button
-                  onClick={(e) => onRestore(note.id, e)}
+                  onClick={handleRestore}
                   className="p-1 text-slate-400 hover:text-sky-400 rounded transition-colors flex items-center gap-0.5"
                   title="استعادة من سلة المهملات"
                 >
@@ -339,7 +420,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
                 </button>
               )}
               <button
-                onClick={(e) => onDelete(note.id, e)}
+                onClick={handleDelete}
                 className="p-1 text-rose-400 hover:text-rose-300 rounded transition-colors flex items-center gap-0.5"
                 title="حذف نهائي"
               >
@@ -349,7 +430,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
             </>
           ) : note.isArchived ? (
             <button
-              onClick={(e) => onArchive(note.id, e)}
+              onClick={handleArchive}
               className="p-1 text-slate-400 hover:text-sky-400 rounded transition-colors flex items-center gap-0.5"
               title="استعادة من الأرشيف"
             >
@@ -359,14 +440,14 @@ export const NoteCard: React.FC<NoteCardProps> = ({
           ) : (
             <>
               <button
-                onClick={(e) => onArchive(note.id, e)}
+                onClick={handleArchive}
                 className="p-1 text-slate-400 hover:text-slate-200 rounded transition-colors"
                 title="أرشفة"
               >
                 <Archive size={13} />
               </button>
               <button
-                onClick={(e) => onDelete(note.id, e)}
+                onClick={handleDelete}
                 className="p-1 text-slate-400 hover:text-rose-400 rounded transition-colors"
                 title="حذف"
               >

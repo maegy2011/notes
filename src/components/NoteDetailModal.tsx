@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { Note } from '../types';
 import { CATEGORY_LABELS, COLOR_CLASSES } from '../data/initialNotes';
 import DOMPurify from 'dompurify';
@@ -38,7 +38,8 @@ interface NoteDetailModalProps {
   showToast: (msg: string) => void;
 }
 
-const formatReminder = (iso?: string) => {
+// Move helper function outside component
+const formatReminder = (iso?: string): string => {
   if (!iso) return '';
   return new Date(iso).toLocaleString('ar-EG', {
     weekday: 'long',
@@ -49,6 +50,20 @@ const formatReminder = (iso?: string) => {
     minute: '2-digit',
     hour12: true,
   });
+};
+
+// DOMPurify configuration
+const DOMPURIFY_CONFIG = {
+  ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'p', 'br',
+                 'ul', 'ol', 'li', 'h1', 'h2', 'h3',
+                 'blockquote', 'code', 'pre', 'span', 'del', 'a'],
+  ALLOWED_ATTR: ['class', 'href', 'target', 'rel'],
+  FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form',
+                'input', 'textarea', 'button', 'style'],
+  FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover',
+                'onfocus', 'onblur', 'onsubmit', 'style'],
+  ALLOW_DATA_ATTR: false,
+  ADD_ATTR: ['rel'] as string[],
 };
 
 export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
@@ -66,44 +81,81 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
   onDuplicate,
   showToast
 }) => {
-  const colorStyle = COLOR_CLASSES[note.color] || COLOR_CLASSES.slate;
+  // Memoize color style
+  const colorStyle = useMemo(() => 
+    COLOR_CLASSES[note.color] || COLOR_CLASSES.slate,
+    [note.color]
+  );
 
-  const formattedDate = new Date(note.updatedAt).toLocaleDateString('ar-EG', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
+  // Memoize date formatting
+  const formattedDate = useMemo(() => {
+    return new Date(note.updatedAt).toLocaleDateString('ar-EG', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  }, [note.updatedAt]);
 
-  const formattedTime = new Date(note.updatedAt).toLocaleTimeString('ar-EG', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  });
+  const formattedTime = useMemo(() => {
+    return new Date(note.updatedAt).toLocaleTimeString('ar-EG', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  }, [note.updatedAt]);
 
-  const handleCopy = () => {
+  // Memoize checklist stats
+  const checklistStats = useMemo(() => {
+    const totalItems = note.checklist?.length || 0;
+    const completedItems = note.checklist?.filter(c => c.completed).length || 0;
+    const taskReminderCount = note.checklist?.filter(item => !!item.reminderAt).length || 0;
+    return { totalItems, completedItems, taskReminderCount };
+  }, [note.checklist]);
+
+  // Memoize sanitized content
+  const sanitizedContent = useMemo(() => {
+    if (!note.content) return '';
+    return DOMPurify.sanitize(note.content, DOMPURIFY_CONFIG);
+  }, [note.content]);
+
+  // Memoize handlers
+  const handleCopy = useCallback(() => {
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = DOMPurify.sanitize(note.content, {
-      ALLOWED_TAGS: [], ALLOWED_ATTR: [],
+      ALLOWED_TAGS: [],
+      ALLOWED_ATTR: [],
     });
     let text = `${note.title}\n\n${tempDiv.textContent || tempDiv.innerText || ''}`;
+    
     if (note.reminder?.datetime) {
       text += `\n\n⏰ ${note.reminder.type === 'event' ? 'الحدث' : 'التذكير'}: ${formatReminder(note.reminder.datetime)}`;
-      if (note.reminder.endDatetime) text += `\n🏁 النهاية: ${formatReminder(note.reminder.endDatetime)}`;
-      if (note.reminder.location) text += `\n📍 المكان: ${note.reminder.location}`;
+      if (note.reminder.endDatetime) {
+        text += `\n🏁 النهاية: ${formatReminder(note.reminder.endDatetime)}`;
+      }
+      if (note.reminder.location) {
+        text += `\n📍 المكان: ${note.reminder.location}`;
+      }
     }
+    
     if (note.checklist && note.checklist.length > 0) {
-      text += '\n\n' + note.checklist.map(c => `${c.completed ? '✅' : '⬜'} ${c.text}${c.reminderAt ? ` (⏰ ${formatReminder(c.reminderAt)})` : ''}`).join('\n');
+      text += '\n\n' + note.checklist.map(c => {
+        const reminderText = c.reminderAt ? ` (⏰ ${formatReminder(c.reminderAt)})` : '';
+        return `${c.completed ? '✅' : '⬜'} ${c.text}${reminderText}`;
+      }).join('\n');
     }
+    
     navigator.clipboard.writeText(text);
     showToast('تم نسخ محتوى الملاحظة');
-  };
+  }, [note, showToast]);
 
-  const handleShare = () => {
+  const handleShare = useCallback(() => {
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = DOMPurify.sanitize(note.content, {
-      ALLOWED_TAGS: [], ALLOWED_ATTR: [],
+      ALLOWED_TAGS: [],
+      ALLOWED_ATTR: [],
     });
+    
     if (navigator.share) {
       navigator.share({
         title: note.title,
@@ -112,17 +164,63 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
     } else {
       handleCopy();
     }
-  };
+  }, [note, handleCopy, showToast]);
 
-  const totalItems = note.checklist?.length || 0;
-  const completedItems = note.checklist?.filter(c => c.completed).length || 0;
-  const taskReminderCount = note.checklist?.filter(item => !!item.reminderAt).length || 0;
+  const handleClose = useCallback(() => {
+    onClose();
+  }, [onClose]);
+
+  const handleEdit = useCallback(() => {
+    onEdit();
+  }, [onEdit]);
+
+  const handleTogglePin = useCallback(() => {
+    onTogglePin(note.id);
+  }, [note.id, onTogglePin]);
+
+  const handleToggleFavorite = useCallback(() => {
+    onToggleFavorite(note.id);
+  }, [note.id, onToggleFavorite]);
+
+  const handleToggleArchive = useCallback(() => {
+    onToggleArchive(note.id);
+  }, [note.id, onToggleArchive]);
+
+  const handleToggleLock = useCallback(() => {
+    onToggleLock?.(note.id);
+  }, [note.id, onToggleLock]);
+
+  const handleRestoreFromTrash = useCallback(() => {
+    onRestoreFromTrash?.(note.id);
+  }, [note.id, onRestoreFromTrash]);
+
+  const handlePermanentDelete = useCallback(() => {
+    onPermanentDelete?.(note.id);
+  }, [note.id, onPermanentDelete]);
+
+  const handleToggleChecklist = useCallback((itemId: string) => {
+    if (!note.isArchived) {
+      onToggleChecklist(itemId);
+    } else {
+      showToast('قم باستعادة الملاحظة من الأرشيف لتعديل المهام');
+    }
+  }, [note.isArchived, onToggleChecklist, showToast]);
+
+  const handleDuplicate = useCallback(() => {
+    onDuplicate?.(note);
+  }, [note, onDuplicate]);
+
+  const handleShareClick = useCallback(() => {
+    onShare ? onShare(note) : handleShare();
+  }, [note, onShare, handleShare]);
+
+  const { totalItems, completedItems, taskReminderCount } = checklistStats;
 
   return (
     <div className="fixed inset-0 bg-slate-950 z-30 flex flex-col animate-slideUp select-none overflow-hidden">
       <div className={`flex items-center justify-between px-4 py-3 border-b ${colorStyle.bg} ${colorStyle.border} shrink-0`}>
         <button
-          onClick={onClose}
+          onClick={handleClose}
           className="flex items-center gap-1 text-slate-300 hover:text-white bg-slate-900/60 py-1 pr-1 pl-3 rounded-lg backdrop-blur-sm transition-colors"
         >
           <ArrowRight size={18} />
@@ -136,9 +234,10 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
         <div className="flex items-center gap-1">
           {onToggleLock && !note.isTrash && !note.isArchived && (
             <button
-              onClick={() => onToggleLock(note.id)}
+              onClick={handleToggleLock}
               className="p-1.5 text-slate-300 hover:text-sky-400 rounded-lg bg-slate-900/40 transition-colors"
               title={note.isLocked ? 'إلغاء القفل' : 'قفل الملاحظة'}
+              aria-label={note.isLocked ? 'إلغاء قفل الملاحظة' : 'قفل الملاحظة'}
             >
               {note.isLocked ? (
                 <LockIcon size={16} className="text-sky-400 fill-sky-400/30" />
@@ -149,18 +248,20 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
           )}
 
           <button
-            onClick={() => onToggleFavorite(note.id)}
+            onClick={handleToggleFavorite}
             className="p-1.5 text-slate-300 hover:text-amber-400 rounded-lg bg-slate-900/40 transition-colors"
             title="تفضيل"
+            aria-label={note.isFavorite ? 'إزالة من المفضلة' : 'إضافة للمفضلة'}
           >
             <Star size={16} className={note.isFavorite ? 'text-amber-400 fill-amber-400' : ''} />
           </button>
 
-          {!note.isArchived && (
+          {!note.isArchived && !note.isTrash && (
             <button
-              onClick={() => onTogglePin(note.id)}
+              onClick={handleTogglePin}
               className="p-1.5 text-slate-300 hover:text-white rounded-lg bg-slate-900/40 transition-colors"
               title={note.isPinned ? 'إلغاء التثبيت' : 'تثبيت'}
+              aria-label={note.isPinned ? 'إلغاء التثبيت' : 'تثبيت'}
             >
               <Pin size={16} className={note.isPinned ? 'text-white fill-white rotate-45' : ''} />
             </button>
@@ -175,7 +276,7 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
             <span>هذه الملاحظة في الأرشيف (للقراءة فقط)</span>
           </div>
           <button
-            onClick={() => onToggleArchive(note.id)}
+            onClick={handleToggleArchive}
             className="text-[11px] bg-slate-700 hover:bg-slate-600 text-amber-400 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors"
           >
             <RefreshCw size={12} />
@@ -193,7 +294,7 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
             </div>
             {onRestoreFromTrash && (
               <button
-                onClick={() => onRestoreFromTrash(note.id)}
+                onClick={handleRestoreFromTrash}
                 className="text-[11px] bg-sky-600 hover:bg-sky-500 text-white px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors"
               >
                 <RefreshCw size={12} />
@@ -258,23 +359,13 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
           </div>
         )}
 
-        {note.content && (
+        {sanitizedContent && (
           <div
             className="text-xs text-slate-200 leading-relaxed font-normal select-text break-words bg-slate-900/40 p-4 rounded-2xl border border-slate-800/60 rich-text-view"
-           dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(note.content, {
-            ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'p', 'br',
-                           'ul', 'ol', 'li', 'h1', 'h2', 'h3',
-                           'blockquote', 'code', 'pre', 'span', 'del', 'a'],
-            ALLOWED_ATTR: ['class', 'href', 'target', 'rel'],
-            FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form',
-                          'input', 'textarea', 'button', 'style'],
-            FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover',
-                          'onfocus', 'onblur', 'onsubmit', 'style'],
-            ALLOW_DATA_ATTR: false,
-            ADD_ATTR: ['rel'],
-          }) }}
+            dangerouslySetInnerHTML={{ __html: sanitizedContent }}
           />
         )}
+        
         {note.checklist && note.checklist.length > 0 && (
           <div className="space-y-2.5">
             <div className="flex items-center justify-between text-xs text-slate-400 px-1">
@@ -291,15 +382,9 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
               {note.checklist.map((item) => (
                 <label
                   key={item.id}
-                  onClick={() => {
-                    if (!note.isArchived) {
-                      onToggleChecklist(item.id);
-                    } else {
-                      showToast('قم باستعادة الملاحظة من الأرشيف لتعديل المهام');
-                    }
-                  }}
+                  onClick={() => handleToggleChecklist(item.id)}
                   className={`flex items-start gap-3 p-2.5 rounded-xl transition-colors ${
-                    note.isArchived ? 'opacity-70 cursor-not-allowed' : 'hover:bg-slate-850/50 cursor-pointer'
+                    note.isArchived ? 'opacity-70 cursor-not-allowed' : 'hover:bg-slate-800/50 cursor-pointer'
                   }`}
                 >
                   <input
@@ -333,7 +418,7 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
           <>
             {onRestoreFromTrash && (
               <button
-                onClick={() => onRestoreFromTrash(note.id)}
+                onClick={handleRestoreFromTrash}
                 className="flex-1 bg-sky-500 hover:bg-sky-400 text-slate-950 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-sky-500/10 transition-transform active:scale-95"
               >
                 <RefreshCw size={16} className="stroke-[2.5]" />
@@ -342,7 +427,7 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
             )}
             {onPermanentDelete && (
               <button
-                onClick={() => onPermanentDelete(note.id)}
+                onClick={handlePermanentDelete}
                 className="flex-1 bg-rose-500 hover:bg-rose-400 text-slate-950 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-rose-500/10 transition-transform active:scale-95"
               >
                 <Trash2 size={16} className="stroke-[2.5]" />
@@ -352,7 +437,7 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
           </>
         ) : !note.isArchived ? (
           <button
-            onClick={onEdit}
+            onClick={handleEdit}
             className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-amber-500/10 transition-transform active:scale-95"
           >
             <Edit3 size={16} className="stroke-[2.5]" />
@@ -360,7 +445,7 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
           </button>
         ) : (
           <button
-            onClick={() => onToggleArchive(note.id)}
+            onClick={handleToggleArchive}
             className="flex-1 bg-sky-500 hover:bg-sky-400 text-slate-950 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-sky-500/10 transition-transform active:scale-95"
           >
             <RefreshCw size={16} className="stroke-[2.5]" />
@@ -370,7 +455,7 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
 
         {!note.isArchived && !note.isTrash && (
           <button
-            onClick={() => onToggleArchive(note.id)}
+            onClick={handleToggleArchive}
             className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition-colors flex items-center justify-center gap-1 text-xs px-3"
             title="أرشفة"
           >
@@ -383,7 +468,7 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
           <>
             {onDuplicate && (
               <button
-                onClick={() => onDuplicate(note)}
+                onClick={handleDuplicate}
                 className="p-2.5 bg-slate-800 hover:bg-slate-700 text-purple-300 rounded-xl border border-slate-700 transition-colors"
                 title="إنشاء نسخة (Duplicate)"
               >
@@ -400,7 +485,7 @@ export const NoteDetailModal: React.FC<NoteDetailModalProps> = ({
             </button>
 
             <button
-              onClick={() => onShare ? onShare(note) : handleShare()}
+              onClick={handleShareClick}
               className="p-2.5 bg-slate-800 hover:bg-slate-700 text-sky-300 rounded-xl border border-slate-700 transition-colors"
               title="مشاركة"
             >

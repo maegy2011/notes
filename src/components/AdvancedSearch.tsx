@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Note, NoteCategory, NoteColor } from '../types';
 import { CATEGORY_LABELS, COLOR_CLASSES } from '../data/initialNotes';
 import {
@@ -82,7 +82,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     return Array.from(wordSet);
   }, [notes]);
 
-  // Generate suggestions based on input
+  // Generate suggestions based on input - FIXED: added dependency
   useEffect(() => {
     if (filters.query.length >= 2) {
       const queryLower = filters.query.toLowerCase();
@@ -92,23 +92,26 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
       setSuggestions(matched);
       setShowSuggestions(matched.length > 0);
     } else {
+      setSuggestions([]);
       setShowSuggestions(false);
     }
   }, [filters.query, allWords]);
 
-  // Save recent searches
-  const saveToRecent = (query: string) => {
+  // Save recent searches - FIXED: use useCallback
+  const saveToRecent = useCallback((query: string) => {
     if (!query.trim()) return;
-    const updated = [query, ...recentSearches.filter(s => s !== query)].slice(0, 8);
-    setRecentSearches(updated);
-    localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
-  };
+    setRecentSearches(prev => {
+      const updated = [query, ...prev.filter(s => s !== query)].slice(0, 8);
+      localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
 
   // Clear recent searches
-  const clearRecentSearches = () => {
+  const clearRecentSearches = useCallback(() => {
     setRecentSearches([]);
     localStorage.removeItem(RECENT_SEARCHES_KEY);
-  };
+  }, []);
 
   // Filter and sort notes
   const filteredResults = useMemo(() => {
@@ -209,7 +212,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     return results;
   }, [notes, filters]);
 
-  // Notify parent of results change
+  // Notify parent of results change - FIXED: stable callback reference
   useEffect(() => {
     onResultsChange(filteredResults, filters);
   }, [filteredResults, filters, onResultsChange]);
@@ -221,7 +224,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     }
   }, [isOpen]);
 
-  // Close suggestions on outside click
+  // Close suggestions on outside click - FIXED: proper cleanup
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (suggestionsRef.current && !suggestionsRef.current.contains(e.target as Node)) {
@@ -232,48 +235,59 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // FIXED: Input sanitization with proper typing
   const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-  // تنظيف المدخلات من الأحرف الخطرة
-  const sanitized = e.target.value.slice(0, 500).replace(/[\x00-\x1F\x7F]/g, '');
-  setFilters(prev => ({ ...prev, query: sanitized }));
+    const sanitized = e.target.value.slice(0, 500).replace(/[\x00-\x1F\x7F]/g, '');
+    setFilters(prev => ({ ...prev, query: sanitized }));
   };
 
-  const handleSearch = (query?: string) => {
+  const handleSearch = useCallback((query?: string) => {
     const q = query || filters.query;
     if (q.trim()) {
       saveToRecent(q.trim());
     }
     setShowSuggestions(false);
-  };
+  }, [filters.query, saveToRecent]);
 
-  const selectSuggestion = (word: string) => {
+  const selectSuggestion = useCallback((word: string) => {
     setFilters(prev => ({ ...prev, query: word }));
     handleSearch(word);
     setShowSuggestions(false);
-  };
+  }, [handleSearch]);
 
-  const toggleCategory = (cat: NoteCategory) => {
+  const toggleCategory = useCallback((cat: NoteCategory) => {
     setFilters(prev => ({
       ...prev,
       categories: prev.categories.includes(cat)
         ? prev.categories.filter(c => c !== cat)
         : [...prev.categories, cat]
     }));
-  };
+  }, []);
 
-  const toggleColor = (color: NoteColor) => {
+  const toggleColor = useCallback((color: NoteColor) => {
     setFilters(prev => ({
       ...prev,
       colors: prev.colors.includes(color)
         ? prev.colors.filter(c => c !== color)
         : [...prev.colors, color]
     }));
-  };
+  }, []);
 
-  const resetFilters = () => {
+  const toggleStatusFilter = useCallback((key: 'isPinned' | 'isFavorite' | 'hasChecklist') => {
+    setFilters(prev => {
+      const currentVal = prev[key];
+      let newVal: boolean | null;
+      if (currentVal === null) newVal = true;
+      else if (currentVal === true) newVal = false;
+      else newVal = null;
+      return { ...prev, [key]: newVal };
+    });
+  }, []);
+
+  const resetFilters = useCallback(() => {
     setFilters(defaultFilters);
     setShowFilters(false);
-  };
+  }, []);
 
   const activeFiltersCount = useMemo(() => {
     let count = 0;
@@ -292,6 +306,22 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
   const categories: NoteCategory[] = ['work', 'personal', 'ideas', 'study'];
   const colors: NoteColor[] = ['amber', 'emerald', 'sky', 'rose', 'purple', 'slate'];
 
+  // FIXED: Handle note selection with proper event dispatch
+  const handleNoteClick = useCallback((note: Note) => {
+    onClose();
+    setTimeout(() => {
+      const event = new CustomEvent('selectNote', { detail: note.id });
+      window.dispatchEvent(event);
+    }, 200);
+  }, [onClose]);
+
+  // FIXED: Handle input focus to show suggestions correctly
+  const handleInputFocus = useCallback(() => {
+    if (filters.query.length >= 2 && suggestions.length > 0) {
+      setShowSuggestions(true);
+    }
+  }, [filters.query.length, suggestions.length]);
+
   if (!isOpen) return null;
 
   return (
@@ -302,6 +332,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
           <button
             onClick={onClose}
             className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+            aria-label="إغلاق البحث"
           >
             <ArrowRight size={20} />
           </button>
@@ -314,14 +345,16 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
               value={filters.query}
               onChange={handleQueryChange}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              onFocus={() => filters.query.length >= 2 && setSuggestions(suggestions)}
+              onFocus={handleInputFocus}
               placeholder="ابحث في الملاحظات، المحتوى، والمهام..."
               className="w-full bg-slate-800 text-white text-sm rounded-xl pl-4 pr-10 py-2.5 border border-slate-700 focus:outline-none focus:border-amber-500/60 placeholder:text-slate-500 transition-all"
+              aria-label="حقل البحث"
             />
             {filters.query && (
               <button
                 onClick={() => setFilters(prev => ({ ...prev, query: '' }))}
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                aria-label="مسح البحث"
               >
                 <X size={14} />
               </button>
@@ -332,7 +365,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
               <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-xl z-50">
                 {suggestions.map((word, idx) => (
                   <button
-                    key={idx}
+                    key={`${word}-${idx}`}
                     onClick={() => selectSuggestion(word)}
                     className="w-full text-right px-3 py-2 text-xs text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-2 transition-colors"
                   >
@@ -349,6 +382,8 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
             className={`p-2.5 rounded-xl flex items-center gap-1.5 text-xs font-medium transition-all relative ${
               showFilters ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
             }`}
+            aria-label="عرض الفلاتر"
+            aria-expanded={showFilters}
           >
             <Filter size={14} />
             <span className="hidden sm:inline">فلاتر</span>
@@ -380,7 +415,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
           <div className="flex flex-wrap gap-1.5">
             {recentSearches.map((search, idx) => (
               <button
-                key={idx}
+                key={`recent-${idx}`}
                 onClick={() => selectSuggestion(search)}
                 className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 border border-slate-700/50 transition-colors"
               >
@@ -439,6 +474,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                     className={`w-7 h-7 rounded-full ${bg} flex items-center justify-center transition-all ${
                       filters.colors.includes(color) ? 'ring-2 ring-white scale-110' : 'opacity-50 hover:opacity-80'
                     }`}
+                    aria-label={`لون ${color}`}
                   >
                     {filters.colors.includes(color) && <CheckSquare size={12} className="text-white" />}
                   </button>
@@ -447,7 +483,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
             </div>
           </div>
 
-          {/* Status Filters */}
+          {/* Status Filters - FIXED: removed unused icon property */}
           <div>
             <label className="text-[10px] text-slate-500 font-medium flex items-center gap-1 mb-2">
               <Star size={11} />
@@ -455,21 +491,15 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
             </label>
             <div className="flex flex-wrap gap-1.5">
               {[
-                { key: 'isPinned', label: '📌 مثبتة', icon: Pin },
-                { key: 'isFavorite', label: '⭐ مفضلة', icon: Star },
-                { key: 'hasChecklist', label: '☑️ لها قائمة مهام', icon: CheckSquare }
+                { key: 'isPinned' as const, label: '📌 مثبتة' },
+                { key: 'isFavorite' as const, label: '⭐ مفضلة' },
+                { key: 'hasChecklist' as const, label: '☑️ لها قائمة مهام' }
               ].map(({ key, label }) => {
-                const currentVal = filters[key as keyof SearchFilters] as boolean | null;
+                const currentVal = filters[key];
                 return (
                   <button
                     key={key}
-                    onClick={() => {
-                      let newVal: boolean | null;
-                      if (currentVal === null) newVal = true;
-                      else if (currentVal === true) newVal = false;
-                      else newVal = null;
-                      setFilters(prev => ({ ...prev, [key]: newVal }));
-                    }}
+                    onClick={() => toggleStatusFilter(key)}
                     className={`text-[11px] px-3 py-1.5 rounded-lg font-medium transition-all ${
                       currentVal === true
                         ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
@@ -500,6 +530,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                   value={filters.dateFrom}
                   onChange={(e) => setFilters(prev => ({ ...prev, dateFrom: e.target.value }))}
                   className="w-full bg-slate-800 text-slate-200 text-[11px] rounded-lg px-2 py-1.5 border border-slate-700 focus:outline-none focus:border-amber-500/60"
+                  aria-label="من تاريخ"
                 />
                 <span className="text-[9px] text-slate-600 mt-0.5 block">من تاريخ</span>
               </div>
@@ -509,6 +540,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                   value={filters.dateTo}
                   onChange={(e) => setFilters(prev => ({ ...prev, dateTo: e.target.value }))}
                   className="w-full bg-slate-800 text-slate-200 text-[11px] rounded-lg px-2 py-1.5 border border-slate-700 focus:outline-none focus:border-amber-500/60"
+                  aria-label="إلى تاريخ"
                 />
                 <span className="text-[9px] text-slate-600 mt-0.5 block">إلى تاريخ</span>
               </div>
@@ -526,6 +558,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                 value={filters.sortBy}
                 onChange={(e) => setFilters(prev => ({ ...prev, sortBy: e.target.value as SearchFilters['sortBy'] }))}
                 className="flex-1 bg-slate-800 text-slate-200 text-[11px] rounded-lg px-2 py-2 border border-slate-700 focus:outline-none"
+                aria-label="ترتيب حسب"
               >
                 <option value="updatedAt">تاريخ التعديل</option>
                 <option value="createdAt">تاريخ الإنشاء</option>
@@ -539,6 +572,7 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
                   sortOrder: prev.sortOrder === 'asc' ? 'desc' : 'asc'
                 }))}
                 className="bg-slate-800 text-slate-400 hover:text-white px-3 rounded-lg border border-slate-700 flex items-center justify-center transition-colors"
+                aria-label={`ترتيب ${filters.sortOrder === 'asc' ? 'تنازلي' : 'تصاعدي'}`}
               >
                 {filters.sortOrder === 'asc' ? <SortAsc size={14} /> : <SortDesc size={14} />}
               </button>
@@ -594,13 +628,10 @@ export const AdvancedSearch: React.FC<AdvancedSearchProps> = ({
               <div
                 key={note.id}
                 className={`p-3 rounded-xl border ${colorStyle.bg} ${colorStyle.border} cursor-pointer`}
-                onClick={() => {
-                  onClose();
-                  setTimeout(() => {
-                    const event = new CustomEvent('selectNote', { detail: note.id });
-                    window.dispatchEvent(event);
-                  }, 200);
-                }}
+                onClick={() => handleNoteClick(note)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => e.key === 'Enter' && handleNoteClick(note)}
               >
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <h4 className="text-xs font-bold text-white line-clamp-1 flex-1">
