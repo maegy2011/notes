@@ -42,26 +42,28 @@ const persistToLocalStorage = async (): Promise<void> => {
     const b64 = uint8ToBase64(data);
     const encrypted = await encrypt(b64, await getEncryptionKey());
     localStorage.setItem(DB_STORAGE_KEY, encrypted);
-  } catch (err) {
-    // Fallback: store unencrypted if encryption fails (dev only)
+} catch (err) {
     if (import.meta.env.DEV) {
-      console.warn('[SQLite] Encryption failed, storing plain:', err);
-      const data = db.export();
-      const b64 = uint8ToBase64(data);
-      localStorage.setItem(DB_STORAGE_KEY, b64);
+      console.warn('[SQLite] Encryption failed, DB NOT saved:', err);
     }
+    // لا تخزن البيانات بدون تشفير في أي وضع — أخفق بصمت
+    throw new Error('[SQLite] Failed to encrypt database for storage');
   }
 };
+let _cachedKey: string | null = null;
 
-// helper: استخدم مفتاحًا ثابتًا أو مشتقًا من كلمة مرور المستخدم
 async function getEncryptionKey(): Promise<string> {
-  // استخدم localStorage بدلاً من sessionStorage لضمان بقاء المفتاح
+  if (_cachedKey) return _cachedKey;
   const ENCRYPTION_KEY_STORAGE = 'mohafadaty_enc_key_v1';
   let key = localStorage.getItem(ENCRYPTION_KEY_STORAGE);
   if (!key) {
-    key = crypto.randomUUID();
+    // استخدام crypto.getRandomValues بدلاً من crypto.randomUUID للحصول على انتروبيا أعلى
+    const arr = new Uint8Array(32);
+    crypto.getRandomValues(arr);
+    key = Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
     localStorage.setItem(ENCRYPTION_KEY_STORAGE, key);
   }
+  _cachedKey = key;
   return key;
 }
 const loadFromLocalStorage = async (): Promise<Uint8Array | null> => {
@@ -74,8 +76,13 @@ const loadFromLocalStorage = async (): Promise<Uint8Array | null> => {
     try {
       b64 = await decrypt(encrypted, await getEncryptionKey());
     } catch {
-      // إذا فشل فك التشفير، حاول قراءة البيانات مباشرة (للتوافق مع النسخ القديمة)
-      b64 = encrypted;
+      // للتوافق مع النسخ القديمة غير المشفرة فقط — تحقق من صيغة Base64 أولاً
+      if (/^[A-Za-z0-9+/]*={0,2}$/.test(encrypted) && encrypted.length >= 100) {
+        b64 = encrypted;
+      } else {
+        if (import.meta.env.DEV) console.warn('[SQLite] Decryption failed and data is not valid plain Base64, ignoring');
+        return null;
+      }
     }
     
     // التحقق من طول Base64 المعقول
@@ -162,65 +169,46 @@ const validateTableName = (table: string): ValidTable => {
   }
   return table as ValidTable;
 };
-
-/* ─────────────────────────────────────────────
-   Generic JSON-blob CRUD helpers
-   Each entity is stored as { id, data: JSON.stringify(entity) }
-   This keeps SQL simple and avoids column-mismatch issues.
-   ───────────────────────────────────────────── */
-const upsert = (table: string, id: string, entity: any) => {
-validateTableName(table);
-const d = getDb();
-// ✅ التحقق من صحة المعرف
-if (!id || typeof id !== 'string' || id.length === 0) {
-throw new Error('[SQLite] Invalid ID: must be non-empty string');
-}
-// ✅ التحقق من أن entity ليس null أو undefined
-if (!entity || typeof entity !== 'object') {
-throw new Error('[SQLite] Invalid entity: must be object');
-}
-// ✅ التحقق من أن JSON.stringify لا ينتج عنه string فارغة
-const json = JSON.stringify(entity);
-if (json.length === 0 || json === '{}') {
-throw new Error('[SQLite] Entity produced empty JSON');
-}
-try {
-const existing = d.exec(`SELECT id FROM ${table} WHERE id = ?`, [id]);
-if (existing.length > 0 && existing[0].values.length > 0) {
-d.run(`UPDATE ${table} SET data = ? WHERE id = ?`, [json, id]);
-} else {
-d.run(`INSERT INTO ${table} (id, data) VALUES (?, ?)`, [id, json]);
-}
-await persistToLocalStorage();
-} catch (err) {
-console.error(`[SQLite] Upsert failed for table ${table}:`, err);
-throw new Error(`[SQLite] Failed to save data to ${table}`);
-}
-};
-
-
-const getAll = <T>(table: string): T[] => {
+const upsert = async (table: string, id: string, entity: any) => {
   validateTableName(table);
   const d = getDb();
-  const result = d.exec(`SELECT data FROM ${table}`);
-  if (result.length === 0) return [];
-  return result[0].values.map((row: any[]) => JSON.parse(row[0] as string) as T);
+  if (!id || typeof id !== 'string' || id.length === 0) {
+    throw new Error('[SQLite] Invalid ID: must be non-empty string');
+  }
+  if (!entity || typeof entity !== 'object') {
+    throw new Error('[SQLite] Invalid entity: must be object');
+  }
+  const json = JSON.stringify(entity);
+  if (json.length === 0 || json === '{}') {
+    throw new Error('[SQLite] Entity produced empty JSON');
+  }
+  try {
+    const existing = d.exec(`SELECT id FROM ${table} WHERE id = ?`, [id]);
+    if (existing.length > 0 && existing[0].values.length > 0) {
+      d.run(`UPDATE ${table} SET data = ? WHERE id = ?`, [json, id]);
+    } else {
+      d.run(`INSERT INTO ${table} (id, data) VALUES (?, ?)`, [id, json]);
+    }
+    await persistToLocalStorage();
+  } catch (err) {
+    console.error(`[SQLite] Upsert failed for table ${table}:`, err);
+    throw new Error(`[SQLite] Failed to save data to ${table}`);
+  }
 };
 
-const deleteRow = (table: string, id: string) => {
+const deleteRow = async (table: string, id: string) => {
   validateTableName(table);
   const d = getDb();
   d.run(`DELETE FROM ${table} WHERE id = ?`, [id]);
   await persistToLocalStorage();
 };
 
-const clearTable = (table: string) => {
+const clearTable = async (table: string) => {
   validateTableName(table);
   const d = getDb();
   d.run(`DELETE FROM ${table}`);
   await persistToLocalStorage();
 };
-
 /* ─────────────────────────────────────────────
    Notes API
    ───────────────────────────────────────────── */

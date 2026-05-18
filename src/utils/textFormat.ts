@@ -204,6 +204,8 @@ function inlineFormat(s: string): string {
         return `<span class="text-rose-400 line-through">${text}</span>`;
       }
       
-      return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-sky-400 underline">${text}</a>`;
+      const safeUrl = encodeURI(url.trim());
+      const safeText = text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="text-sky-400 underline">${safeText}</a>`;
     });
 }

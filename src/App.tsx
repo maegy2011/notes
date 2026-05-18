@@ -75,56 +75,48 @@ export default function App() {
   // ─── Initialize SQLite WASM Database & Load Data ───
   useEffect(() => {
     const bootDatabase = async () => {
-      await initDatabase();
-
-      // 1. Load Notes from SQLite
-      let sqlNotes = dbNotes.getAll();
-      if (sqlNotes.length === 0) {
-        INITIAL_NOTES.forEach(n => dbNotes.save(n));
-        sqlNotes = dbNotes.getAll();
-      }
-      setNotes(sqlNotes);
-
-      // 2. Load Events from SQLite
-      const sqlEvents = dbEvents.getAll();
-      setEvents(sqlEvents);
-
-      // 3. Load Tasks
-      const sqlTasks = dbTasks.getAll();
-      setTasks(sqlTasks);
-
-      // 4. Load Shopping Lists
-      const sqlShopping = dbShopping.getAll();
-      setShoppingLists(sqlShopping);
-
-      setDbReady(true);
-
-      // Sync on launch if configured in settings
       try {
-        const settingsSaved = localStorage.getItem('notes_app_settings_v1');
-        if (settingsSaved) {
-          const parsed = JSON.parse(settingsSaved);
-          if (parsed.syncOnLaunch) {
-            const cfg = tursoHelpers.getConfig();
-            if (cfg.url && cfg.token) {
-              // Trigger background silent sync on launch
-              (async () => {
-                try {
-                  await tursoHelpers.syncNow(cfg, () => {});
-                  // Reload data once synced
-                  setNotes(dbNotes.getAll());
-                  setEvents(dbEvents.getAll());
-                  setTasks(dbTasks.getAll());
-                  setShoppingLists(dbShopping.getAll());
-                } catch (err) {
-                  if (import.meta.env.DEV) console.warn('[Turso Sync On Launch] Failed background sync:', err);
-                }
-              })();
+        await initDatabase();
+
+        let sqlNotes = dbNotes.getAll();
+        if (sqlNotes.length === 0) {
+          INITIAL_NOTES.forEach(n => dbNotes.save(n));
+          sqlNotes = dbNotes.getAll();
+        }
+        setNotes(sqlNotes);
+        setEvents(dbEvents.getAll());
+        setTasks(dbTasks.getAll());
+        setShoppingLists(dbShopping.getAll());
+        setDbReady(true);
+
+        try {
+          const settingsSaved = localStorage.getItem('notes_app_settings_v1');
+          if (settingsSaved) {
+            const parsed = JSON.parse(settingsSaved);
+            if (parsed.syncOnLaunch) {
+              const cfg = tursoHelpers.getConfig();
+              if (cfg.url && cfg.token) {
+                (async () => {
+                  try {
+                    await tursoHelpers.syncNow(cfg, () => {});
+                    setNotes(dbNotes.getAll());
+                    setEvents(dbEvents.getAll());
+                    setTasks(dbTasks.getAll());
+                    setShoppingLists(dbShopping.getAll());
+                  } catch (err) {
+                    if (import.meta.env.DEV) console.warn('[Turso Sync On Launch] Failed:', err);
+                  }
+                })();
+              }
             }
           }
+        } catch (err) {
+          if (import.meta.env.DEV) console.error('[Boot Sync Error]', err);
         }
       } catch (err) {
-        if (import.meta.env.DEV) console.error('[Boot Sync Error]', err);
+        console.error('[SQLite] Failed to initialize database:', err);
+        // يمكن إضافة state لعرض رسالة خطأ للمستخدم
+        setDbReady(false);
       }
     };
     bootDatabase();
@@ -1208,7 +1200,7 @@ return () => clearInterval(interval);
       let activeSortBy = searchFilters.sortBy;
       
       if (settings.defaultSortOrder !== 'last-used' && searchFilters.sortBy === 'updatedAt' && searchFilters.sortOrder === 'desc') {
-        activeSortBy = settings.defaultSortOrder as any;
+        activeSortBy = settings.defaultSortOrder as typeof searchFilters.sortBy;
       }
 
       switch (activeSortBy) {

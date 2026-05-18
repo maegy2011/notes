@@ -72,9 +72,10 @@ export const tursoHelpers = {
         }
       }
       return { ...cfg, token };
-    } catch {}
+    } catch (err) {
+      if (import.meta.env.DEV) console.warn('[Turso] Failed to parse config:', err);
+    }
     return { url: '', token: '', autoSync: false };
-  },
 
     saveConfig: (cfg: TursoConfig) => {
     const { token, ...safeConfig } = cfg;
@@ -197,7 +198,7 @@ throw new Error(userMessage);
       await tursoHelpers.executeBatch(config, [{ sql: 'SELECT 1' }]);
       return true;
     } catch (err) {
-      console.error('[Turso] Test connection failed:', err);
+      if (import.meta.env.DEV) console.error('[Turso] Test connection failed:', err);
       throw err;
     }
   },
@@ -250,10 +251,15 @@ throw new Error(userMessage);
       return n && n.id && typeof n.id === 'string' && n.id.length > 0;
       });
 
-      const remoteEvents = mapRemoteRows<AppEvent>(downloadResult.results[1]);
-      const remoteTasks = mapRemoteRows<AppTask>(downloadResult.results[2]);
-      const remoteShopping = mapRemoteRows<ShoppingList>(downloadResult.results[3]);
-
+      const remoteEvents = mapRemoteRows<AppEvent>(downloadResult.results[1]).filter(e =>
+        e && e.id && typeof e.id === 'string' && e.id.length > 0
+      );
+      const remoteTasks = mapRemoteRows<AppTask>(downloadResult.results[2]).filter(t =>
+        t && t.id && typeof t.id === 'string' && t.id.length > 0
+      );
+      const remoteShopping = mapRemoteRows<ShoppingList>(downloadResult.results[3]).filter(l =>
+        l && l.id && typeof l.id === 'string' && l.id.length > 0
+      );
       // 4. Merge & Sync (Notes)
       const mergedNotes = mergeEntities(localNotes, remoteNotes);
       dbNotes.replaceAll(mergedNotes);
