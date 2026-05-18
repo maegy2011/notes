@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Note, TabType, ThemeMode, AppEvent, AppTask, ShoppingList } from './types';
 import { AppSettings } from './components/StatsView';
 import { INITIAL_NOTES, CATEGORY_LABELS } from './data/initialNotes';
@@ -62,17 +62,14 @@ export default function App() {
 
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
-  // ─── Events state ───
   const [isEventEditorOpen, setIsEventEditorOpen] = useState(false);
   const [currentEditEvent, setCurrentEditEvent] = useState<AppEvent | null>(null);
   const [viewingEvent, setViewingEvent] = useState<AppEvent | null>(null);
   const [newEventDate, setNewEventDate] = useState<Date | undefined>(undefined);
 
-  // ─── Tasks state ───
   const [isTaskEditorOpen, setIsTaskEditorOpen] = useState(false);
   const [currentEditTask, setCurrentEditTask] = useState<AppTask | null>(null);
 
-  // ─── Initialize SQLite WASM Database & Load Data ───
   useEffect(() => {
     const bootDatabase = async () => {
       try {
@@ -115,14 +112,12 @@ export default function App() {
         }
       } catch (err) {
         console.error('[SQLite] Failed to initialize database:', err);
-        // يمكن إضافة state لعرض رسالة خطأ للمستخدم
         setDbReady(false);
       }
     };
     bootDatabase();
   }, []);
 
-  // ─── Events SQL Operations ───
   const handleSaveEvent = (data: Omit<AppEvent, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
     const now = new Date().toISOString();
     let newEv: AppEvent;
@@ -145,7 +140,6 @@ export default function App() {
       showToast('تمت إضافة الحدث الجديد');
     }
     
-    // Sync with SQLite DB
     dbEvents.save(newEv);
 
     setIsEventEditorOpen(false);
@@ -156,7 +150,6 @@ export default function App() {
 
   const handleDeleteEvent = (id: string) => {
     setEvents(prev => prev.filter(e => e.id !== id));
-    // Sync with SQLite DB
     dbEvents.delete(id);
     showToast('تم حذف الحدث');
     if (viewingEvent?.id === id) setViewingEvent(null);
@@ -169,7 +162,6 @@ export default function App() {
         const done = !e.isCompleted;
         showToast(done ? '✅ تم تحديد الحدث كمنجز' : 'تم إلغاء الإنجاز');
         const updated = { ...e, isCompleted: done, updatedAt: new Date().toISOString() };
-        // Sync with SQLite DB
         dbEvents.save(updated);
         if (viewingEvent?.id === id) setViewingEvent(updated);
         triggerAutoSync();
@@ -179,7 +171,6 @@ export default function App() {
     }));
   };
 
-  // ─── Tasks SQL Operations ───
   const handleSaveTask = (data: Omit<AppTask, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => {
     const now = new Date().toISOString();
     let newT: AppTask;
@@ -202,9 +193,7 @@ export default function App() {
       showToast('تمت إضافة المهمة الجديدة');
     }
 
-    // Sync with SQLite DB
     dbTasks.save(newT);
-
     setIsTaskEditorOpen(false);
     setCurrentEditTask(null);
     triggerAutoSync();
@@ -212,7 +201,6 @@ export default function App() {
 
   const handleDeleteTask = (id: string) => {
     setTasks(prev => prev.filter(t => t.id !== id));
-    // Sync with SQLite DB
     dbTasks.delete(id);
     showToast('تم حذف المهمة');
     triggerAutoSync();
@@ -224,7 +212,6 @@ export default function App() {
         const done = !t.isCompleted;
         showToast(done ? '✅ تم إنجاز المهمة' : 'تم إلغاء الإنجاز');
         const updated = { ...t, isCompleted: done, updatedAt: new Date().toISOString() };
-        // Sync with SQLite DB
         dbTasks.save(updated);
         triggerAutoSync();
         return updated;
@@ -233,16 +220,13 @@ export default function App() {
     }));
   };
 
-  // ─── Shopping Lists SQL Operations ───
   const handleSaveShoppingLists = (updatedLists: ShoppingList[]) => {
     setShoppingLists(updatedLists);
-    // Clear all shopping lists in SQLite and save fresh array to maintain correct state
     dbShopping.clearAll();
     updatedLists.forEach(l => dbShopping.save(l));
     triggerAutoSync();
   };
 
-  // Advanced App Settings state
   const SETTINGS_STORAGE_KEY = 'notes_app_settings_v1';
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
@@ -260,29 +244,22 @@ export default function App() {
     };
   });
 
-  // Apply settings to DOM dynamically
   useEffect(() => {
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-
-    // 1. Apply font type class
     const fontClasses = ['font-cairo', 'font-mono', 'font-sans', 'font-serif'];
     document.documentElement.classList.remove(...fontClasses);
     if (settings.defaultFontType === 'monospace') document.documentElement.classList.add('font-mono');
     else if (settings.defaultFontType === 'sans-serif') document.documentElement.classList.add('font-sans');
     else if (settings.defaultFontType === 'serif') document.documentElement.classList.add('font-serif');
     else document.documentElement.classList.add('font-cairo');
-
-    // 2. Apply list item height & font size classes globally if needed or locally
   }, [settings]);
 
-  // Set initial default screen on mount if enabled
   useEffect(() => {
     if (settings.defaultScreen) {
       setActiveTab(settings.defaultScreen as TabType);
     }
   }, []);
 
-  // Theme Mode state
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     return (localStorage.getItem('notes_app_theme_v1') as ThemeMode) || 'system';
   });
@@ -314,20 +291,17 @@ export default function App() {
     }
   }, [themeMode]);
 
-  // Lock system state
   const [pinLockMode, setPinLockMode] = useState<'set' | 'unlock' | 'verify' | 'lock_all' | 'unlock_all' | null>(null);
   const [noteToUnlock, setNoteToUnlock] = useState<Note | null>(null);
   const [appLocked, setAppLocked] = useState(() => lockHelpers.isAppLockEnabled());
-  // Sync locked notes with localStorage and notes state
+  
   useEffect(() => {
     const lockedIds = lockHelpers.getLockedNoteIds();
-    
     setNotes(prev => prev.map(n => ({
       ...n,
       isLocked: lockedIds.includes(n.id)
     })));
 
-    // Check if app lock is enabled
     if (lockHelpers.isAppLockEnabled()) {
       setPinLockMode('verify');
     }
@@ -362,162 +336,156 @@ export default function App() {
   const syncInProgressRef = useRef(false);
   
   const triggerAutoSync = async () => {
-  if (syncInProgressRef.current) return;
-  const cfg = tursoHelpers.getConfig();
-  syncInProgressRef.current = true;
+    if (syncInProgressRef.current) return;
+    const cfg = tursoHelpers.getConfig();
+    syncInProgressRef.current = true;
 
-  try {
-    if (cfg.url && cfg.token && cfg.autoSync) {
-      try {
-        // Silent background sync
-        await tursoHelpers.bootstrapTables(cfg);
+    try {
+      if (cfg.url && cfg.token && cfg.autoSync) {
+        try {
+          await tursoHelpers.bootstrapTables(cfg);
 
-        const localNotes = dbNotes.getAll();
-        const localEvents = dbEvents.getAll();
-        const localTasks = dbTasks.getAll();
-        const localShopping = dbShopping.getAll();
+          const localNotes = dbNotes.getAll();
+          const localEvents = dbEvents.getAll();
+          const localTasks = dbTasks.getAll();
+          const localShopping = dbShopping.getAll();
 
-        const downloadResult = await tursoHelpers.executeBatch(cfg, [
-          { sql: 'SELECT id, data FROM notes' },
-          { sql: 'SELECT id, data FROM events' },
-          { sql: 'SELECT id, data FROM tasks' },
-          { sql: 'SELECT id, data FROM shopping_lists' }
-        ]);
+          const downloadResult = await tursoHelpers.executeBatch(cfg, [
+            { sql: 'SELECT id, data FROM notes' },
+            { sql: 'SELECT id, data FROM events' },
+            { sql: 'SELECT id, data FROM tasks' },
+            { sql: 'SELECT id, data FROM shopping_lists' }
+          ]);
 
-        const remoteNotes = downloadResult.results[0]?.response?.result?.rows?.map((r: any[]) => JSON.parse(r[1]?.value)) || [];
-        const remoteEvents = downloadResult.results[1]?.response?.result?.rows?.map((r: any[]) => JSON.parse(r[1]?.value)) || [];
-        const remoteTasks = downloadResult.results[2]?.response?.result?.rows?.map((r: any[]) => JSON.parse(r[1]?.value)) || [];
-        const remoteShopping = downloadResult.results[3]?.response?.result?.rows?.map((r: any[]) => JSON.parse(r[1]?.value)) || [];
+          const remoteNotes = downloadResult.results[0]?.response?.result?.rows?.map((r: any[]) => JSON.parse(r[1]?.value)) || [];
+          const remoteEvents = downloadResult.results[1]?.response?.result?.rows?.map((r: any[]) => JSON.parse(r[1]?.value)) || [];
+          const remoteTasks = downloadResult.results[2]?.response?.result?.rows?.map((r: any[]) => JSON.parse(r[1]?.value)) || [];
+          const remoteShopping = downloadResult.results[3]?.response?.result?.rows?.map((r: any[]) => JSON.parse(r[1]?.value)) || [];
 
-        const mergedNotes = mergeEntitiesLocal(localNotes, remoteNotes);
-        dbNotes.replaceAll(mergedNotes);
-        setNotes(mergedNotes);
+          const mergedNotes = mergeEntitiesLocal(localNotes, remoteNotes);
+          dbNotes.replaceAll(mergedNotes);
+          setNotes(mergedNotes);
 
-        const mergedEvents = mergeEntitiesLocal(localEvents, remoteEvents);
-        dbEvents.replaceAll(mergedEvents);
-        setEvents(mergedEvents);
+          const mergedEvents = mergeEntitiesLocal(localEvents, remoteEvents);
+          dbEvents.replaceAll(mergedEvents);
+          setEvents(mergedEvents);
 
-        const mergedTasks = mergeEntitiesLocal(localTasks, remoteTasks);
-        dbTasks.replaceAll(mergedTasks);
-        setTasks(mergedTasks);
+          const mergedTasks = mergeEntitiesLocal(localTasks, remoteTasks);
+          dbTasks.replaceAll(mergedTasks);
+          setTasks(mergedTasks);
 
-        const mergedShopping = mergeEntitiesLocal(localShopping, remoteShopping);
-        dbShopping.replaceAll(mergedShopping);
-        setShoppingLists(mergedShopping);
+          const mergedShopping = mergeEntitiesLocal(localShopping, remoteShopping);
+          dbShopping.replaceAll(mergedShopping);
+          setShoppingLists(mergedShopping);
 
-        const uploadStatements: { sql: string; args?: any[] }[] = [];
-        mergedNotes.forEach(n => uploadStatements.push({ sql: 'INSERT OR REPLACE INTO notes (id, data) VALUES (?, ?)', args: [n.id, JSON.stringify(n)] }));
-        mergedEvents.forEach(e => uploadStatements.push({ sql: 'INSERT OR REPLACE INTO events (id, data) VALUES (?, ?)', args: [e.id, JSON.stringify(e)] }));
-        mergedTasks.forEach(t => uploadStatements.push({ sql: 'INSERT OR REPLACE INTO tasks (id, data) VALUES (?, ?)', args: [t.id, JSON.stringify(t)] }));
-        mergedShopping.forEach(l => uploadStatements.push({ sql: 'INSERT OR REPLACE INTO shopping_lists (id, data) VALUES (?, ?)', args: [l.id, JSON.stringify(l)] }));
+          const uploadStatements: { sql: string; args?: any[] }[] = [];
+          mergedNotes.forEach(n => uploadStatements.push({ sql: 'INSERT OR REPLACE INTO notes (id, data) VALUES (?, ?)', args: [n.id, JSON.stringify(n)] }));
+          mergedEvents.forEach(e => uploadStatements.push({ sql: 'INSERT OR REPLACE INTO events (id, data) VALUES (?, ?)', args: [e.id, JSON.stringify(e)] }));
+          mergedTasks.forEach(t => uploadStatements.push({ sql: 'INSERT OR REPLACE INTO tasks (id, data) VALUES (?, ?)', args: [t.id, JSON.stringify(t)] }));
+          mergedShopping.forEach(l => uploadStatements.push({ sql: 'INSERT OR REPLACE INTO shopping_lists (id, data) VALUES (?, ?)', args: [l.id, JSON.stringify(l)] }));
 
-        if (uploadStatements.length > 0) {
-          await tursoHelpers.executeBatch(cfg, uploadStatements);
+          if (uploadStatements.length > 0) {
+            await tursoHelpers.executeBatch(cfg, uploadStatements);
+          }
+        } catch (err) {
+          if (import.meta.env.DEV) console.warn('[Turso Auto-Sync] Background synchronization failed silently:', err);
         }
-      } catch (err) {
-        if (import.meta.env.DEV) console.warn('[Turso Auto-Sync] Background synchronization failed silently:', err);
       }
+    } finally {
+      syncInProgressRef.current = false;
     }
-  } finally {       // ✅ finally الآن تابع للـ try الخارجي الصحيح
-    syncInProgressRef.current = false;
-  }
-};
-  const mergeEntitiesLocal = <T extends { id: string; updatedAt: string }>(local: T[], remote: T[]): T[] => {
-const mergedMap = new Map<string, T>();
-local.forEach(item => mergedMap.set(item.id, item));
-remote.forEach(remoteItem => {
-const localItem = mergedMap.get(remoteItem.id);
-if (!localItem) {
-mergedMap.set(remoteItem.id, remoteItem);
-} else {
-let localTime = NaN;
-let remoteTime = NaN;
-try {
-localTime = new Date(localItem.updatedAt).getTime();
-remoteTime = new Date(remoteItem.updatedAt).getTime();
-} catch {
-if (import.meta.env.DEV) console.warn('[Merge] Invalid date format');
-// ✅ استخدم البيانات المحلية كافتراضي إذا فشل التحليل
-return;
-}
-if (isNaN(localTime) || isNaN(remoteTime)) {
-if (import.meta.env.DEV) console.warn('[Merge] Invalid date timestamp');
-return;
-}
-if (remoteTime > localTime) {
-mergedMap.set(remoteItem.id, remoteItem);
-}
-}
-});
-return Array.from(mergedMap.values());
-};
+  };
 
+  const mergeEntitiesLocal = <T extends { id: string; updatedAt: string }>(local: T[], remote: T[]): T[] => {
+    const mergedMap = new Map<string, T>();
+    local.forEach(item => mergedMap.set(item.id, item));
+    remote.forEach(remoteItem => {
+      const localItem = mergedMap.get(remoteItem.id);
+      if (!localItem) {
+        mergedMap.set(remoteItem.id, remoteItem);
+      } else {
+        let localTime = NaN;
+        let remoteTime = NaN;
+        try {
+          localTime = new Date(localItem.updatedAt).getTime();
+          remoteTime = new Date(remoteItem.updatedAt).getTime();
+        } catch {
+          if (import.meta.env.DEV) console.warn('[Merge] Invalid date format');
+          return;
+        }
+        if (isNaN(localTime) || isNaN(remoteTime)) {
+          if (import.meta.env.DEV) console.warn('[Merge] Invalid date timestamp');
+          return;
+        }
+        if (remoteTime > localTime) {
+          mergedMap.set(remoteItem.id, remoteItem);
+        }
+      }
+    });
+    return Array.from(mergedMap.values());
+  };
 
   const handleSaveNote = (noteData: Partial<Note>) => {
-  const timestamp = new Date().toISOString();
-  
-  // ✅ التحقق من صحة البيانات
-  if (!noteData || typeof noteData !== 'object') {
-    showToast('❌ بيانات غير صحيحة');
-    return;
-  }
-  if (noteData.title && noteData.title.length > 500) {
-showToast('❌ عنوان الملاحظة طويل جداً (الحد الأقصى 500 حرف)');
-return;
-}
-if (noteData.content && noteData.content.length > 500000) {
-showToast('❌ محتوى الملاحظة طويل جداً (الحد الأقصى 500,000 حرف)');
-return;
-}
-
-  
-  let updatedNote: Note;
-  
-  if (currentEditNote) {
-  const existingNote = notes.find(n => n.id === currentEditNote.id);
-  if (!existingNote) {
-    showToast('❌ لم يتم العثور على الملاحظة المراد تحديثها');
-    return;
-  }
-  updatedNote = {
-    ...existingNote,
-    ...noteData,
-    updatedAt: timestamp
-  } as Note;
-
-    setNotes(prev => prev.map(n => n.id === currentEditNote.id ? updatedNote : n));
-    showToast('تم تحديث الملاحظة بنجاح');
-    if (viewingNote && viewingNote.id === currentEditNote.id) {
-      setViewingNote(updatedNote);
+    const timestamp = new Date().toISOString();
+    
+    if (!noteData || typeof noteData !== 'object') {
+      showToast('❌ بيانات غير صحيحة');
+      return;
     }
-  } else {
-    updatedNote = {
-      id: uid(),
-      title: (noteData.title || 'ملاحظة جديدة').slice(0, 500),
-      content: (noteData.content || '').slice(0, 500000),
-      category: noteData.category || 'ideas',
-      color: noteData.color || 'amber',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      isPinned: false,
-      isFavorite: false,
-      isArchived: false,
-      isTrash: false,
-      isLocked: false,
-      checklist: noteData.checklist,
-      reminder: noteData.reminder
-    };
-    setNotes(prev => [updatedNote, ...prev]);
-    showToast('تمت إضافة الملاحظة الجديدة');
-  }
-  
-  // Sync Notes with SQLite Database
-  dbNotes.save(updatedNote);
-  setIsEditing(false);
-  setCurrentEditNote(null);
-  triggerAutoSync();
-};
+    if (noteData.title && noteData.title.length > 500) {
+      showToast('❌ عنوان الملاحظة طويل جداً (الحد الأقصى 500 حرف)');
+      return;
+    }
+    if (noteData.content && noteData.content.length > 500000) {
+      showToast('❌ محتوى الملاحظة طويل جداً (الحد الأقصى 500,000 حرف)');
+      return;
+    }
 
+    let updatedNote: Note;
+    
+    if (currentEditNote) {
+      const existingNote = notes.find(n => n.id === currentEditNote.id);
+      if (!existingNote) {
+        showToast('❌ لم يتم العثور على الملاحظة المراد تحديثها');
+        return;
+      }
+      updatedNote = {
+        ...existingNote,
+        ...noteData,
+        updatedAt: timestamp
+      } as Note;
+
+      setNotes(prev => prev.map(n => n.id === currentEditNote.id ? updatedNote : n));
+      showToast('تم تحديث الملاحظة بنجاح');
+      if (viewingNote && viewingNote.id === currentEditNote.id) {
+        setViewingNote(updatedNote);
+      }
+    } else {
+      updatedNote = {
+        id: uid(),
+        title: (noteData.title || 'ملاحظة جديدة').slice(0, 500),
+        content: (noteData.content || '').slice(0, 500000),
+        category: noteData.category || 'ideas',
+        color: noteData.color || 'amber',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        isPinned: false,
+        isFavorite: false,
+        isArchived: false,
+        isTrash: false,
+        isLocked: false,
+        checklist: noteData.checklist,
+        reminder: noteData.reminder
+      };
+      setNotes(prev => [updatedNote, ...prev]);
+      showToast('تمت إضافة الملاحظة الجديدة');
+    }
+    
+    dbNotes.save(updatedNote);
+    setIsEditing(false);
+    setCurrentEditNote(null);
+    triggerAutoSync();
+  };
 
   const handleTogglePin = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -527,7 +495,6 @@ return;
           const newStatus = !n.isPinned;
           showToast(newStatus ? 'تم تثبيت الملاحظة' : 'تم إلغاء التثبيت');
           const updated = { ...n, isPinned: newStatus };
-          // Sync with SQLite DB
           dbNotes.save(updated);
           if (viewingNote?.id === id) {
             setViewingNote(v => v ? { ...v, isPinned: newStatus } : null);
@@ -548,7 +515,6 @@ return;
           const newStatus = !n.isFavorite;
           showToast(newStatus ? 'تمت الإضافة للمفضلة' : 'تمت الإزالة من المفضلة');
           const updated = { ...n, isFavorite: newStatus };
-          // Sync with SQLite DB
           dbNotes.save(updated);
           if (viewingNote?.id === id) {
             setViewingNote(v => v ? { ...v, isFavorite: newStatus } : null);
@@ -569,7 +535,6 @@ return;
           const newStatus = !n.isArchived;
           showToast(newStatus ? 'تمت أرشفة الملاحظة' : 'تمت الاستعادة من الأرشيف');
           const updated = { ...n, isArchived: newStatus, isPinned: false };
-          // Sync with SQLite DB
           dbNotes.save(updated);
           if (viewingNote?.id === id) {
             setViewingNote(v => v ? { ...v, isArchived: newStatus, isPinned: false } : null);
@@ -582,7 +547,6 @@ return;
     triggerAutoSync();
   };
 
-  // Move note to trash (soft delete)
   const handleDeleteNote = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setNotes(prev => prev.map(n => {
@@ -594,7 +558,6 @@ return;
           isArchived: false,
           deletedAt: new Date().toISOString() 
         };
-        // Sync with SQLite DB
         dbNotes.save(updated);
         return updated;
       }
@@ -607,11 +570,9 @@ return;
     triggerAutoSync();
   };
 
-  // Permanent delete (for trash items)
   const handlePermanentDelete = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setNotes(prev => prev.filter(n => n.id !== id));
-    // Sync with SQLite DB
     dbNotes.delete(id);
     showToast('تم حذف الملاحظة نهائياً');
     if (viewingNote?.id === id) {
@@ -620,7 +581,6 @@ return;
     triggerAutoSync();
   };
 
-  // Restore from trash
   const handleRestoreFromTrash = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setNotes(prev => prev.map(n => {
@@ -631,7 +591,6 @@ return;
           deletedAt: undefined,
           updatedAt: new Date().toISOString()
         };
-        // Sync with SQLite DB
         dbNotes.save(updated);
         return updated;
       }
@@ -644,46 +603,41 @@ return;
     triggerAutoSync();
   };
 
-  // Empty trash completely
   const handleEmptyTrash = () => {
     const trashedNotes = notes.filter(n => n.isTrash);
     if (trashedNotes.length === 0) {
       showToast('سلة المهملات فارغة بالفعل');
       return;
     }
-    // حذف من SQLite أيضاً
     trashedNotes.forEach(n => dbNotes.delete(n.id));
     setNotes(prev => prev.filter(n => !n.isTrash));
     showToast(`تم تفريغ سلة المهملات (${trashedNotes.length} ملاحظة محذوفة نهائياً)`);
   };
 
-  // Auto-delete trashed notes after 30 days
-    useEffect(() => {
+  // ✅ Auto-delete trashed notes fixed using proper React patterns
+  useEffect(() => {
     const cleanupTrashedNotes = () => {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      
-      // استخدام دالة updater بدلاً من الاعتماد على state الخارجي
       setNotes(prev => {
-        const toDelete = prev.filter(n => 
-          n.isTrash && n.deletedAt && new Date(n.deletedAt) < thirtyDaysAgo
-        );
-       if (toDelete.length > 0) {
-  // حذف من SQLite أيضاً
-  toDelete.forEach(n => dbNotes.delete(n.id));
-  // ✅ نقل showToast خارج مُحدِّث الحالة
-  const count = toDelete.length;
-  setTimeout(() => showToast(`تم حذف ${count} ملاحظة قديمة من سلة المهملات تلقائياً`), 0);
-  return prev.filter(n => !n.isTrash || (n.deletedAt && new Date(n.deletedAt) >= thirtyDaysAgo));
-
-}
-return prev;
-});
-};
-cleanupTrashedNotes();
-const interval = setInterval(cleanupTrashedNotes, 24 * 60 * 60 * 1000);
-return () => clearInterval(interval);
-}, []);
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        
+        const toDelete = prev.filter(n => n.isTrash && n.deletedAt && new Date(n.deletedAt) < thirtyDaysAgo);
+        
+        if (toDelete.length > 0) {
+          setTimeout(() => {
+            toDelete.forEach(n => dbNotes.delete(n.id));
+            showToast(`تم حذف ${toDelete.length} ملاحظة قديمة من سلة المهملات تلقائياً`);
+          }, 0);
+          return prev.filter(n => !n.isTrash || (n.deletedAt && new Date(n.deletedAt) >= thirtyDaysAgo));
+        }
+        return prev;
+      });
+    };
+    
+    cleanupTrashedNotes();
+    const interval = setInterval(cleanupTrashedNotes, 24 * 60 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleToggleChecklistItem = (noteId: string, itemId: string) => {
     setNotes(prev =>
@@ -693,7 +647,6 @@ return () => clearInterval(interval);
             item.id === itemId ? { ...item, completed: !item.completed } : item
           );
           const updatedNote = { ...n, checklist: updatedChecklist, updatedAt: new Date().toISOString() };
-          // Sync with SQLite DB
           dbNotes.save(updatedNote);
           if (viewingNote?.id === noteId) {
             setViewingNote(updatedNote);
@@ -718,7 +671,6 @@ return () => clearInterval(interval);
     showToast('تم مسح جميع الملاحظات');
   };
 
-  // Mass Archive Actions
   const handleArchiveCompletedChecklists = () => {
     let archivedCount = 0;
     setNotes(prev => prev.map(n => {
@@ -784,12 +736,10 @@ return () => clearInterval(interval);
       return;
     }
     setNotes(prev => prev.filter(n => !n.isArchived));
-    // حذف من SQLite أيضاً
     archivedNotes.forEach(n => dbNotes.delete(n.id));
     showToast(`تم حذف ${archivedNotes.length} ملاحظة من الأرشيف نهائياً`);
   };
 
-  // Lock/Unlock functions
   const handleToggleNoteLock = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     
@@ -797,7 +747,6 @@ return () => clearInterval(interval);
     if (!note) return;
 
     if (note.isLocked) {
-      // Unlock the note - require PIN
       if (!lockHelpers.hasPin()) {
         showToast('⚠️ يرجى تعيين رقم سري أولاً من الإعدادات');
         return;
@@ -805,7 +754,6 @@ return () => clearInterval(interval);
       setNoteToUnlock(note);
       setPinLockMode('unlock');
     } else {
-      // Lock the note - require PIN verification
       if (!lockHelpers.hasPin()) {
         showToast('⚠️ يرجى تعيين رقم سري أولاً من الإعدادات');
         return;
@@ -825,7 +773,6 @@ return () => clearInterval(interval);
     setPinLockMode(null);
   };
 
-  // Lock ALL notes
   const handleLockAllNotes = () => {
     if (!lockHelpers.hasPin()) {
       showToast('⚠️ يرجى تعيين رقم سري أولاً من الإعدادات');
@@ -839,7 +786,6 @@ return () => clearInterval(interval);
     setPinLockMode('lock_all');
   };
 
-  // Unlock ALL notes
   const handleUnlockAllNotes = () => {
     if (!lockHelpers.hasPin()) {
       showToast('⚠️ يرجى تعيين رقم سري أولاً من الإعدادات');
@@ -853,7 +799,6 @@ return () => clearInterval(interval);
     setPinLockMode('unlock_all');
   };
 
-  // Handle selecting a locked note
   const handleSelectLockedNote = (note: Note) => {
     if (note.isLocked) {
       if (!lockHelpers.hasPin()) {
@@ -866,11 +811,8 @@ return () => clearInterval(interval);
       setViewingNote(note);
     }
   };
-
-  // After successful PIN unlock - show the note or lock it
   
-    const handlePinSuccess = () => {
-    // تحديث حالة قفل التطبيق عند نجاح التحقق
+  const handlePinSuccess = () => {
     if (pinLockMode === 'verify' && !noteToUnlock) {
       setAppLocked(false);
     }
@@ -881,13 +823,11 @@ return () => clearInterval(interval);
       handleLockNoteAfterVerification();
       return;
     } else if (pinLockMode === 'lock_all') {
-      // Lock all lockable notes
       const lockableIds = notes.filter(n => !n.isTrash).map(n => n.id);
       lockHelpers.lockAllNotes(lockableIds);
       setNotes(prev => prev.map(n => !n.isTrash ? { ...n, isLocked: true } : n));
       showToast(`🔒 تم قفل جميع الملاحظات (${lockableIds.length})`);
     } else if (pinLockMode === 'unlock_all') {
-      // Unlock all notes
       lockHelpers.unlockAllNotes();
       setNotes(prev => prev.map(n => ({ ...n, isLocked: false })));
       showToast('🔓 تم فتح جميع الملاحظات المقفلة');
@@ -902,7 +842,6 @@ return () => clearInterval(interval);
     setNoteToUnlock(null);
   };
 
-  // ─── Share & Duplicate handlers ───
   const handleShareNote = (note: Note) => {
     if (note.isLocked) { showToast('⚠️ لا يمكن مشاركة ملاحظة مقفلة'); return; }
     const { title, body } = formatNoteForShare(note);
@@ -955,16 +894,11 @@ return () => clearInterval(interval);
     showToast('✅ تم إنشاء نسخة جديدة من القائمة');
   };
 
-  // ─── Export Data (Backup) ───
   const handleExportData = () => {
-    // إذا كانت هناك ملاحظات مقفلة، اطلب التحقق من PIN أولاً
     const hasLockedNotes = notes.some(n => n.isLocked);
     if (hasLockedNotes && lockHelpers.hasPin()) {
       setNoteToUnlock(null);
       setPinLockMode('verify');
-      // تأجيل التصدير حتى يتم التحقق
-      const originalOnSuccess = handlePinSuccess;
-      // استخدام طريقة بديلة: عرض قفل PIN ثم التصدير
       showToast('⚠️ أدخل الرقم السري لتصدير الملاحظات المقفلة');
       return;
     }
@@ -1001,18 +935,15 @@ return () => clearInterval(interval);
     }
   };
 
-  // ─── Validate Import Data ───
-    const validateImportData = (data: unknown): boolean => {
+  const validateImportData = (data: unknown): boolean => {
     if (!data || typeof data !== 'object') return false;
     const d = data as Record<string, unknown>;
     
-    // تحقق من البنية الأساسية
     if (d.notes !== undefined && !Array.isArray(d.notes)) return false;
     if (d.tasks !== undefined && !Array.isArray(d.tasks)) return false;
     if (d.events !== undefined && !Array.isArray(d.events)) return false;
     if (d.shoppingLists !== undefined && !Array.isArray(d.shoppingLists)) return false;
     
-    // تحقق من الحقول المطلوبة في كل ملاحظة
     if (Array.isArray(d.notes)) {
       for (const note of d.notes) {
         if (!note || typeof note !== 'object') return false;
@@ -1021,31 +952,26 @@ return () => clearInterval(interval);
       }
     }
     
-    // حد أقصى لعدد العناصر لمنع هجمات الذاكرة
     const totalItems = (Array.isArray(d.notes) ? d.notes.length : 0)
       + (Array.isArray(d.events) ? d.events.length : 0)
       + (Array.isArray(d.tasks) ? d.tasks.length : 0)
       + (Array.isArray(d.shoppingLists) ? d.shoppingLists.length : 0);
     if (totalItems > 50000) return false;
     
-    // حد أقصى معقول للحجم
     const jsonSize = JSON.stringify(data).length;
     if (jsonSize > 10 * 1024 * 1024) return false;
     
     return true;
   };
 
-  // ─── Import Data (Restore) ───
   const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // ✅ تحقق من نوع الملف
     if (!file.name.endsWith('.json') && file.type !== 'application/json') {
       showToast('❌ يجب أن يكون الملف بصيغة JSON');
       return;
     }
-    // ✅ تحقق من حجم الملف
     if (file.size > 10 * 1024 * 1024) {
       showToast('❌ الملف كبير جداً (الحد الأقصى 10MB)');
       return;
@@ -1056,20 +982,16 @@ return () => clearInterval(interval);
       try {
         const imported = JSON.parse(event.target?.result as string);
         
-        // ✅ تحقق من البنية
         if (!validateImportData(imported)) {
           showToast('❌ بنية الملف غير صحيحة');
           return;
         }
         
-        // Validation
         if (imported.version !== 'notes_app_backup_v1') {
           showToast('❌ ملف نسخة احتياطية غير صالح أو غير متوافق');
           return;
         }
 
-        // 1. Notes — حفظ في SQLite
-        // 1. Notes — حفظ في SQLite مع التحقق
         if (Array.isArray(imported.notes)) {
           const validNotes = imported.notes.filter((note: any) => {
             return note && 
@@ -1082,19 +1004,16 @@ return () => clearInterval(interval);
           setNotes(validNotes);
         }
         
-        // 2. Events — حفظ في SQLite
         if (Array.isArray(imported.events)) {
           dbEvents.replaceAll(imported.events);
           setEvents(imported.events);
         }
 
-        // 3. Tasks — حفظ في SQLite
         if (Array.isArray(imported.tasks)) {
           dbTasks.replaceAll(imported.tasks);
           setTasks(imported.tasks);
         }
 
-        // 4. Shopping Lists — حفظ في SQLite
         if (Array.isArray(imported.shoppingLists)) {
           dbShopping.replaceAll(imported.shoppingLists);
           setShoppingLists(imported.shoppingLists);
@@ -1113,19 +1032,11 @@ return () => clearInterval(interval);
           setSettings(safeSettings);
         }
 
-        // 6. ✅ أمني: لا نستورد PIN من ملفات خارجية أبداً — يمكن أن يكون ضاراً
-        // المستخدم يجب أن يعيد تعيين الرقم السري يدوياً بعد الاستيراد
         if (imported.pin || imported.appLockEnabled) {
           showToast('⚠️ يجب إعادة تعيين الرقم السري من الإعدادات بعد الاستيراد');
         }
-        // تأكد من أن قفل التطبيق معطل بعد الاستيراد حتى يعيد المستخدم تعيين PIN
         localStorage.setItem('notes_app_lock_enabled_v1', 'false');
         setAppLocked(false);
-
-        // ✅ تحقق من أن lockedNotes مصفوفة سليمة من strings
-                // ✅ أمني: لا نستورد lockedNotes من ملفات خارجية — يمكن استخدامه لحجب الوصول
-        // المستخدم يجب أن يعيد قفل الملاحظات يدوياً بعد الاستيراد
-        // مسح أي قفل حالي لضمان الوصول
         localStorage.removeItem('notes_app_locked_ids_v1');
 
         showToast('✅ تم استيراد وتحديث البيانات بالكامل بنجاح!');
@@ -1159,12 +1070,7 @@ return () => clearInterval(interval);
     }
 
     const filtered = notes.filter(n => {
-      // Trash tab logic
-      if (activeTab === 'trash') {
-        return n.isTrash;
-      }
-      
-      // For other tabs, exclude trashed notes
+      if (activeTab === 'trash') return n.isTrash;
       if (n.isTrash) return false;
       
       if (activeTab === 'favorites' && !n.isFavorite) return false;
@@ -1184,7 +1090,6 @@ return () => clearInterval(interval);
     });
 
     return filtered.sort((a, b) => {
-      // Pin always takes priority unless we're in specific sorting modes
       if (a.isPinned && !b.isPinned) return -1;
       if (!a.isPinned && b.isPinned) return 1;
 
@@ -1241,7 +1146,6 @@ return () => clearInterval(interval);
     .sort((a, b) => new Date(a.reminderAt).getTime() - new Date(b.reminderAt).getTime())
     .slice(0, 2);
 
-  // Show loading screen while SQLite WASM initializes
   if (!dbReady) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 font-['Cairo'] antialiased flex items-center justify-center">
@@ -1250,7 +1154,7 @@ return () => clearInterval(interval);
             <span className="text-2xl">📝</span>
           </div>
           <h2 className="text-sm font-bold text-white">جارِ تهيئة قاعدة البيانات...</h2>
-          <p className="text-[11px] text-slate-400">SQLite WASM · تخزين محلي آمن</p>
+          <p className="text-[11px] text-slate-400">IndexedDB · تخزين محلي آمن</p>
         </div>
       </div>
     );
@@ -1370,7 +1274,6 @@ return () => clearInterval(interval);
                     })}
                   </div>
 
-                  {/* View modes switcher */}
                   <div className="flex items-center gap-0.5 bg-slate-800/80 p-1 rounded-xl shrink-0 mr-2 border border-slate-700">
                     {[
                       { mode: 'list', icon: List, label: 'قائمة بسيطة' },
@@ -1400,7 +1303,6 @@ return () => clearInterval(interval);
                 </div>
               )}
 
-              {/* Mass Archiving Tools for Active Feed */}
               {activeTab === 'notes' && !hasActiveSearch && notes.filter(n => !n.isArchived).length > 0 && (
                 <div className="bg-slate-800/60 border border-slate-700/60 p-3 rounded-2xl flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-xs text-slate-300">
@@ -1428,7 +1330,6 @@ return () => clearInterval(interval);
                 </div>
               )}
 
-              {/* Upcoming reminders */}
               {activeTab === 'notes' && !hasActiveSearch && (upcomingMainReminders.length > 0 || upcomingTaskReminders.length > 0) && (
                 <div className="bg-sky-500/10 border border-sky-500/20 rounded-2xl p-3 space-y-2.5">
                   <div className="flex items-center justify-between">
@@ -1491,7 +1392,6 @@ return () => clearInterval(interval);
                 </div>
               )}
 
-              {/* Lock All / Unlock All Tools */}
               {activeTab === 'notes' && !hasActiveSearch && lockHelpers.hasPin() && notes.filter(n => !n.isTrash && !n.isArchived).length > 0 && (
                 <div className="bg-sky-950/30 border border-sky-900/40 p-3 rounded-2xl flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-xs text-sky-300">
@@ -1547,7 +1447,6 @@ return () => clearInterval(interval);
                 </div>
               )}
 
-              {/* Advanced Archive Management Header */}
               {activeTab === 'archive' && (
                 <div className="space-y-2">
                   <div className="bg-slate-800 border border-slate-700 p-3 rounded-2xl flex flex-wrap items-center justify-between gap-2">
@@ -1586,7 +1485,6 @@ return () => clearInterval(interval);
                 </div>
               )}
 
-              {/* Trash Management Header */}
               {activeTab === 'trash' && (
                 <div className="space-y-2">
                   <div className="bg-rose-950/30 border border-rose-900/50 p-3 rounded-2xl flex flex-wrap items-center justify-between gap-2">
@@ -1684,7 +1582,6 @@ return () => clearInterval(interval);
             </div>
           )}
 
-          {/* Enhanced Multi-action Floating Action Button (FAB) */}
           <EnhancedFAB
             activeTab={activeTab}
             onAddNote={openNewNoteEditor}
@@ -1699,7 +1596,6 @@ return () => clearInterval(interval);
             }}
             onAddShoppingList={() => {
               setActiveTab('shopping');
-              // Delay slightly to let tab transition complete before opening create overlay
               setTimeout(() => {
                 window.dispatchEvent(new CustomEvent('openNewShoppingList'));
               }, 150);
@@ -1709,7 +1605,6 @@ return () => clearInterval(interval);
 
         <Toast message={toastMsg} />
 
-        {/* Quick Sort Menu Overlay */}
         {isSortMenuOpen && (
           <div 
             className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px]" 
@@ -1787,7 +1682,6 @@ return () => clearInterval(interval);
           />
         )}
 
-        {/* Event Editor */}
         {isEventEditorOpen && (
           <EventEditor
             event={currentEditEvent}
@@ -1799,7 +1693,6 @@ return () => clearInterval(interval);
           />
         )}
 
-        {/* Event Detail */}
         {viewingEvent && !isEventEditorOpen && (
           <EventDetailModal
             event={viewingEvent}
@@ -1813,7 +1706,6 @@ return () => clearInterval(interval);
           />
         )}
 
-        {/* Task Editor */}
         {isTaskEditorOpen && (
           <TaskEditor
             task={currentEditTask}
@@ -1824,7 +1716,6 @@ return () => clearInterval(interval);
           />
         )}
 
-        {/* Pin Lock Modal */}
         {pinLockMode && (
           <PinLock
             mode={pinLockMode}

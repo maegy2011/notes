@@ -8,7 +8,7 @@ const LOCKED_NOTES_KEY = 'notes_app_locked_ids_v1';
 const PIN_ATTEMPTS_KEY = 'notes_app_pin_attempts_v1';
 const PIN_LOCKOUT_KEY = 'notes_app_pin_lockout_v1';
 const MAX_PIN_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MS = 60_000; // دقيقة واحدة
+const LOCKOUT_DURATION_MS = 60_000;
 
 interface PinLockProps {
   mode: 'set' | 'unlock' | 'verify' | 'unlock_all' | 'lock_all';
@@ -34,16 +34,15 @@ export const PinLock: React.FC<PinLockProps> = ({
   const [shakeError, setShakeError] = useState(false);
   const [lockoutRemaining, setLockoutRemaining] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const lockoutTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lockoutTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus();
     }
-    // Check if currently in lockout period
     checkLockout();
     return () => {
-      if (lockoutTimerRef.current) clearInterval(lockoutTimerRef.current);
+      if (lockoutTimerRef.current) window.clearInterval(lockoutTimerRef.current);
     };
   }, []);
 
@@ -61,13 +60,13 @@ export const PinLock: React.FC<PinLockProps> = ({
   };
 
   const startLockoutTimer = (untilMs: number) => {
-    if (lockoutTimerRef.current) clearInterval(lockoutTimerRef.current);
-    lockoutTimerRef.current = setInterval(() => {
+    if (lockoutTimerRef.current) window.clearInterval(lockoutTimerRef.current);
+    lockoutTimerRef.current = window.setInterval(() => {
       const remaining = untilMs - Date.now();
       if (remaining <= 0) {
         setLockoutRemaining(0);
         clearLockout();
-        if (lockoutTimerRef.current) clearInterval(lockoutTimerRef.current);
+        if (lockoutTimerRef.current) window.clearInterval(lockoutTimerRef.current);
       } else {
         setLockoutRemaining(remaining);
       }
@@ -113,80 +112,74 @@ export const PinLock: React.FC<PinLockProps> = ({
   }, [error]);
 
   const handleKeyPress = (digit: string) => {
-  if (currentIndex >= 4) return;
-  const newPin = [...pin];
-  newPin[currentIndex] = digit;
-  setPin(newPin);
-  setCurrentIndex(currentIndex + 1);
-  if (currentIndex === 3) {
-    setTimeout(async () => {
-      await handleComplete(newPin.join(''));
-    }, 250);
-  }
-};
+    if (currentIndex >= 4) return;
+    const newPin = [...pin];
+    newPin[currentIndex] = digit;
+    setPin(newPin);
+    setCurrentIndex(currentIndex + 1);
+    if (currentIndex === 3) {
+      setTimeout(async () => {
+        await handleComplete(newPin.join(''));
+      }, 250);
+    }
+  };
 
-
-
-  // ✅ توليد salt ثابت لهذا الجهاز
   const getDeviceSalt = (): string => {
-let salt = localStorage.getItem(DEVICE_SALT_KEY);
-if (!salt) {
-// ✅ استخدام Web Crypto API الآمن
-const randomBytes = crypto.getRandomValues(new Uint8Array(16));
-salt = Array.from(randomBytes)
-.map(b => b.toString(16).padStart(2, '0'))
-.join('');
-localStorage.setItem(DEVICE_SALT_KEY, salt);
-}
-return salt;
-};
+    let salt = localStorage.getItem(DEVICE_SALT_KEY);
+    if (!salt) {
+      const randomBytes = crypto.getRandomValues(new Uint8Array(16));
+      salt = Array.from(randomBytes)
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+      localStorage.setItem(DEVICE_SALT_KEY, salt);
+    }
+    return salt;
+  };
 
-const hashPin = async (pin: string): Promise<string> => {
-const salt = getDeviceSalt();
-const encoder = new TextEncoder();
-const pinData = encoder.encode(pin);
-const saltData = encoder.encode(salt);
-// ✅ الجمع بين PIN والملح
-const combined = new Uint8Array(pinData.length + saltData.length);
-combined.set(pinData, 0);
-combined.set(saltData, pinData.length);
-// ✅ استخدام Web Crypto API مع SHA-256 و PBKDF2
-const key = await crypto.subtle.deriveKey(
-{ name: 'PBKDF2', salt: saltData, iterations: 100000, hash: 'SHA-256' },
-await crypto.subtle.importKey('raw', pinData, 'PBKDF2', false, ['deriveBits']),
-{ name: 'HMAC', hash: 'SHA-256' },
-true,
-['sign', 'verify']
-);
-const exported = await crypto.subtle.exportKey('raw', key);
-return Array.from(new Uint8Array(exported))
-.map(b => b.toString(16).padStart(2, '0'))
-.join('');
-};
+  const hashPin = async (pin: string): Promise<string> => {
+    const salt = getDeviceSalt();
+    const encoder = new TextEncoder();
+    const pinData = encoder.encode(pin);
+    const saltData = encoder.encode(salt);
+    const combined = new Uint8Array(pinData.length + saltData.length);
+    combined.set(pinData, 0);
+    combined.set(saltData, pinData.length);
+    const key = await crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt: saltData, iterations: 100000, hash: 'SHA-256' },
+      await crypto.subtle.importKey('raw', pinData, 'PBKDF2', false, ['deriveBits']),
+      { name: 'HMAC', hash: 'SHA-256' },
+      true,
+      ['sign', 'verify']
+    );
+    const exported = await crypto.subtle.exportKey('raw', key);
+    return Array.from(new Uint8Array(exported))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+  };
 
-const getStoredPinHash = (): string | null => {
-  return localStorage.getItem(PIN_STORAGE_KEY);
-};
+  const getStoredPinHash = (): string | null => {
+    return localStorage.getItem(PIN_STORAGE_KEY);
+  };
 
-const savePinHash = async (newPin: string) => {
-  const hash = await hashPin(newPin);
-  localStorage.setItem(PIN_STORAGE_KEY, hash);
-};
+  const savePinHash = async (newPin: string) => {
+    const hash = await hashPin(newPin);
+    localStorage.setItem(PIN_STORAGE_KEY, hash);
+  };
 
-const verifyPin = async (enteredPin: string, storedHash: string): Promise<boolean> => {
-  const computedHash = await hashPin(enteredPin);
-  const computedLen = computedHash.length;
-  const storedLen = storedHash.length;
-  const maxLen = Math.max(computedLen, storedLen);
-  if (maxLen === 0) return false;
-  let result = 0;
-  for (let i = 0; i < maxLen; i++) {
-    const c1 = i < computedLen ? computedHash.charCodeAt(i) : 0;
-    const c2 = i < storedLen ? storedHash.charCodeAt(i) : 0;
-    result |= c1 ^ c2;
-  }
-  return result === 0;
-};
+  const verifyPin = async (enteredPin: string, storedHash: string): Promise<boolean> => {
+    const computedHash = await hashPin(enteredPin);
+    const computedLen = computedHash.length;
+    const storedLen = storedHash.length;
+    const maxLen = Math.max(computedLen, storedLen);
+    if (maxLen === 0) return false;
+    let result = 0;
+    for (let i = 0; i < maxLen; i++) {
+      const c1 = i < computedLen ? computedHash.charCodeAt(i) : 0;
+      const c2 = i < storedLen ? storedHash.charCodeAt(i) : 0;
+      result |= c1 ^ c2;
+    }
+    return result === 0;
+  };
 
   const handleDelete = () => {
     if (currentIndex === 0) return;
@@ -198,52 +191,51 @@ const verifyPin = async (enteredPin: string, storedHash: string): Promise<boolea
   };
 
   const handleComplete = async (enteredPin: string) => {
-  if (mode === 'set') {
-    if (!isConfirming) {
-      const hash = await hashPin(enteredPin);
-      setFirstPin(hash);
-      setIsConfirming(true);
-      setPin(Array(4).fill(''));
-      setCurrentIndex(0);
-      showToast?.('أعد إدخال الرقم السري للتأكيد');
-      return;
-    } else {
-      const isMatch = await verifyPin(enteredPin, firstPin);
-      if (isMatch) {
-        await savePinHash(enteredPin);
-        showToast?.('✅ تم تعيين الرقم السري بنجاح');
-        onSuccess();
-      } else {
-        setError('الرقم السري غير متطابق! حاول مرة أخرى');
+    if (mode === 'set') {
+      if (!isConfirming) {
+        const hash = await hashPin(enteredPin);
+        setFirstPin(hash);
+        setIsConfirming(true);
         setPin(Array(4).fill(''));
         setCurrentIndex(0);
-        setFirstPin('');
-        setIsConfirming(false);
+        showToast?.('أعد إدخال الرقم السري للتأكيد');
+        return;
+      } else {
+        const isMatch = await verifyPin(enteredPin, firstPin);
+        if (isMatch) {
+          await savePinHash(enteredPin);
+          showToast?.('✅ تم تعيين الرقم السري بنجاح');
+          onSuccess();
+        } else {
+          setError('الرقم السري غير متطابق! حاول مرة أخرى');
+          setPin(Array(4).fill(''));
+          setCurrentIndex(0);
+          setFirstPin('');
+          setIsConfirming(false);
+        }
+        return;
       }
+    }
+    
+    if (lockoutRemaining > 0) {
+      setError(`محاولات كثيرة. انتظر ${Math.ceil(lockoutRemaining / 1000)} ثانية`);
+      setPin(Array(4).fill(''));
+      setCurrentIndex(0);
       return;
     }
-  }
-  // unlock, verify, unlock_all, lock_all
-  if (lockoutRemaining > 0) {
-    setError(`محاولات كثيرة. انتظر ${Math.ceil(lockoutRemaining / 1000)} ثانية`);
-    setPin(Array(4).fill(''));
-    setCurrentIndex(0);
-    return;
-  }
-  const storedHash = getStoredPinHash();
-  if (storedHash && (await verifyPin(enteredPin, storedHash))) {
-    resetFailedAttempts();
-    onSuccess();
-  } else {
-    recordFailedAttempt();
-    const attemptsLeft = MAX_PIN_ATTEMPTS - getFailedAttempts();
-    setError(attemptsLeft > 0 ? `الرقم السري غير صحيح! (متبقي ${attemptsLeft} محاولات)` : 'تم تجاوز الحد المسموح. انتظر...');
-    setPin(Array(4).fill(''));
-    setCurrentIndex(0);
-    showToast?.('❌ الرقم السري غير صحيح');
-  }
-};
-
+    const storedHash = getStoredPinHash();
+    if (storedHash && (await verifyPin(enteredPin, storedHash))) {
+      resetFailedAttempts();
+      onSuccess();
+    } else {
+      recordFailedAttempt();
+      const attemptsLeft = MAX_PIN_ATTEMPTS - getFailedAttempts();
+      setError(attemptsLeft > 0 ? `الرقم السري غير صحيح! (متبقي ${attemptsLeft} محاولات)` : 'تم تجاوز الحد المسموح. انتظر...');
+      setPin(Array(4).fill(''));
+      setCurrentIndex(0);
+      showToast?.('❌ الرقم السري غير صحيح');
+    }
+  };
 
   const getTitle = () => {
     switch (mode) {
@@ -289,14 +281,12 @@ const verifyPin = async (enteredPin: string, storedHash: string): Promise<boolea
     <div className="fixed inset-0 bg-slate-950/98 z-50 flex flex-col items-center justify-center p-6 animate-fadeIn select-none" dir="rtl">
       <div className={`w-full max-w-xs mx-auto bg-slate-900 rounded-3xl border border-slate-800 p-6 shadow-2xl ${shakeError ? 'animate-pulse' : ''}`}>
         
-        {/* Icon */}
         <div className="flex justify-center mb-4">
           <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${getIconBg()}`}>
             {mode === 'set' ? <LockKeyhole size={32} /> : <LockIcon size={32} />}
           </div>
         </div>
 
-        {/* Title */}
         <h2 className="text-sm font-bold text-white text-center mb-1">
           {getTitle()}
         </h2>
@@ -304,7 +294,6 @@ const verifyPin = async (enteredPin: string, storedHash: string): Promise<boolea
           {getSubtitle()}
         </p>
 
-        {/* PIN Dots Display */}
         <div className="flex justify-center gap-3 mb-2" dir="ltr">
           {Array.from({ length: 4 }).map((_, idx) => (
             <div
@@ -322,14 +311,12 @@ const verifyPin = async (enteredPin: string, storedHash: string): Promise<boolea
           ))}
         </div>
 
-        {/* Show entered PIN as text if visible */}
         {showPin && (
           <p className="text-center text-sm text-amber-400 font-mono tracking-[0.5em] mb-2" dir="ltr">
             {pin.map(d => d || '·').join('')}
           </p>
         )}
 
-        {/* Error message */}
         {error && (
           <div className="flex items-center justify-center gap-1 text-rose-400 text-xs mb-2 animate-fadeIn">
             <AlertTriangle size={12} />
@@ -337,7 +324,6 @@ const verifyPin = async (enteredPin: string, storedHash: string): Promise<boolea
           </div>
         )}
 
-        {/* Toggle PIN visibility */}
         <div className="flex justify-center mb-4">
           <button
             onClick={() => setShowPin(!showPin)}
@@ -348,7 +334,6 @@ const verifyPin = async (enteredPin: string, storedHash: string): Promise<boolea
           </button>
         </div>
 
-        {/* Visual Numpad - LTR for proper number ordering */}
         <div className="grid grid-cols-3 gap-2 mb-3 max-w-[240px] mx-auto" dir="ltr">
           {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
             <button
@@ -359,16 +344,13 @@ const verifyPin = async (enteredPin: string, storedHash: string): Promise<boolea
               {num}
             </button>
           ))}
-          {/* Empty space */}
           <div />
-          {/* 0 */}
           <button
             onClick={() => handleKeyPress('0')}
             className="h-14 rounded-2xl bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-white text-xl font-bold transition-all active:scale-90 border border-slate-700/50"
           >
             0
           </button>
-          {/* Delete */}
           <button
             onClick={handleDelete}
             className="h-14 rounded-2xl bg-slate-800 hover:bg-rose-500/20 active:bg-rose-500/30 text-slate-400 hover:text-rose-400 text-sm transition-all active:scale-90 border border-slate-700/50 flex items-center justify-center"
@@ -377,7 +359,6 @@ const verifyPin = async (enteredPin: string, storedHash: string): Promise<boolea
           </button>
         </div>
 
-        {/* Cancel button */}
         <button
           onClick={onCancel}
           className="w-full py-2.5 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-colors border border-slate-800"
@@ -389,7 +370,6 @@ const verifyPin = async (enteredPin: string, storedHash: string): Promise<boolea
   );
 };
 
-// Helper functions for managing lock state
 export const lockHelpers = {
   isAppLockEnabled: (): boolean => {
     return localStorage.getItem(APP_LOCK_KEY) === 'true' && !!localStorage.getItem(PIN_STORAGE_KEY);

@@ -1,7 +1,7 @@
 /**
  * SQLite Database Manager — Pure client-side, no backend.
  * Uses sql.js (SQLite compiled to WASM) running entirely in the browser.
- * The .db file is persisted in localStorage as an encrypted base64-encoded blob.
+ * The .db file is persisted in IndexedDB as an encrypted base64-encoded blob.
  */
 
 import initSqlJs, { Database } from 'sql.js';
@@ -44,7 +44,6 @@ async function getEncryptionKey(): Promise<string> {
   
   let key = localStorage.getItem(ENCRYPTION_KEY_STORAGE);
   if (!key) {
-    // استخدام 32 بايت من القيم العشوائية الآمنة
     const arr = new Uint8Array(32);
     crypto.getRandomValues(arr);
     key = Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -55,16 +54,54 @@ async function getEncryptionKey(): Promise<string> {
 }
 
 /* ─────────────────────────────────────────────
+   IndexedDB Storage (To bypass LocalStorage 5MB limit)
+   ───────────────────────────────────────────── */
+const getIDB = (): Promise<IDBDatabase> => {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('MohafadatyDB', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('store');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+};
+
+const saveToIDB = async (key: string, data: string): Promise<void> => {
+  const idb = await getIDB();
+  return new Promise((resolve, reject) => {
+    const tx = idb.transaction('store', 'readwrite');
+    tx.objectStore('store').put(data, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+};
+
+const loadFromIDB = async (key: string): Promise<string | null> => {
+  const idb = await getIDB();
+  return new Promise((resolve, reject) => {
+    const tx = idb.transaction('store', 'readonly');
+    const req = tx.objectStore('store').get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(tx.error);
+  });
+};
+
+/* ─────────────────────────────────────────────
    Persistence Functions
    ───────────────────────────────────────────── */
-const persistToLocalStorage = async (): Promise<void> => {
+const persistToStorage = async (): Promise<void> => {
   if (!db) return;
   
   try {
     const data = db.export();
     const b64 = uint8ToBase64(data);
     const encrypted = await encrypt(b64, await getEncryptionKey());
-    localStorage.setItem(DB_STORAGE_KEY, encrypted);
+    
+    await saveToIDB(DB_STORAGE_KEY, encrypted);
+    
+    // Clean up legacy localStorage if it exists to free up space
+    if (localStorage.getItem(DB_STORAGE_KEY)) {
+      localStorage.removeItem(DB_STORAGE_KEY);
+    }
   } catch (err) {
     if (import.meta.env.DEV) {
       console.warn('[SQLite] Failed to save database:', err);
@@ -73,17 +110,20 @@ const persistToLocalStorage = async (): Promise<void> => {
   }
 };
 
-const loadFromLocalStorage = async (): Promise<Uint8Array | null> => {
+const loadFromStorage = async (): Promise<Uint8Array | null> => {
   try {
-    const encrypted = localStorage.getItem(DB_STORAGE_KEY);
+    // Try loading from IndexedDB first, then fallback to LocalStorage for backwards compatibility
+    let encrypted = await loadFromIDB(DB_STORAGE_KEY);
+    if (!encrypted) {
+      encrypted = localStorage.getItem(DB_STORAGE_KEY);
+    }
+    
     if (!encrypted || typeof encrypted !== 'string') return null;
     
-    // فك التشفير
     let b64: string;
     try {
       b64 = await decrypt(encrypted, await getEncryptionKey());
     } catch {
-      // للتوافق مع النسخ القديمة غير المشفرة
       if (/^[A-Za-z0-9+/]*={0,2}$/.test(encrypted) && encrypted.length >= 100) {
         b64 = encrypted;
       } else {
@@ -92,7 +132,6 @@ const loadFromLocalStorage = async (): Promise<Uint8Array | null> => {
       }
     }
     
-    // التحقق من صحة البيانات
     if (b64.length < 100) {
       if (import.meta.env.DEV) console.warn('[SQLite] Stored database is too small');
       return null;
@@ -127,11 +166,11 @@ export const initDatabase = async (): Promise<Database> => {
     locateFile: () => sqlWasmUrl,
   });
 
-  const existingData = await loadFromLocalStorage();
+  const existingData = await loadFromStorage();
   
   if (existingData) {
     db = new SQL.Database(existingData);
-    if (import.meta.env.DEV) console.log('[SQLite] Loaded existing database');
+    if (import.meta.env.DEV) console.log('[SQLite] Loaded existing database from storage');
   } else {
     db = new SQL.Database();
     if (import.meta.env.DEV) console.log('[SQLite] Created fresh database');
@@ -139,26 +178,21 @@ export const initDatabase = async (): Promise<Database> => {
 
   const d = db!;
 
-  // Create tables
   d.run(`CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, data TEXT NOT NULL)`);
   d.run(`CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, data TEXT NOT NULL)`);
   d.run(`CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, data TEXT NOT NULL)`);
   d.run(`CREATE TABLE IF NOT EXISTS shopping_lists (id TEXT PRIMARY KEY, data TEXT NOT NULL)`);
   d.run(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
 
-  await persistToLocalStorage();
+  await persistToStorage();
   return d;
 };
 
-/** Get the db instance (must call initDatabase first) */
 const getDb = (): Database => {
   if (!db) throw new Error('[SQLite] Database not initialized. Call initDatabase() first.');
   return db;
 };
 
-/* ─────────────────────────────────────────────
-   Table name validation — prevents SQL injection
-   ───────────────────────────────────────────── */
 const VALID_TABLES = ['notes', 'events', 'tasks', 'shopping_lists', 'settings'] as const;
 type ValidTable = typeof VALID_TABLES[number];
 
@@ -169,9 +203,6 @@ const validateTableName = (table: string): ValidTable => {
   return table as ValidTable;
 };
 
-/* ─────────────────────────────────────────────
-   Generic CRUD Operations
-   ───────────────────────────────────────────── */
 const getAll = <T>(table: string): T[] => {
   validateTableName(table);
   const d = getDb();
@@ -212,7 +243,7 @@ const upsert = async (table: string, id: string, entity: unknown): Promise<void>
     } else {
       d.run(`INSERT INTO ${table} (id, data) VALUES (?, ?)`, [id, json]);
     }
-    await persistToLocalStorage();
+    await persistToStorage();
   } catch (err) {
     console.error(`[SQLite] Upsert failed for table ${table}:`, err);
     throw new Error(`[SQLite] Failed to save data to ${table}`);
@@ -223,19 +254,16 @@ const deleteRow = async (table: string, id: string): Promise<void> => {
   validateTableName(table);
   const d = getDb();
   d.run(`DELETE FROM ${table} WHERE id = ?`, [id]);
-  await persistToLocalStorage();
+  await persistToStorage();
 };
 
 const clearTable = async (table: string): Promise<void> => {
   validateTableName(table);
   const d = getDb();
   d.run(`DELETE FROM ${table}`);
-  await persistToLocalStorage();
+  await persistToStorage();
 };
 
-/* ─────────────────────────────────────────────
-   Notes API
-   ───────────────────────────────────────────── */
 export const dbNotes = {
   getAll: (): Note[] => getAll<Note>('notes'),
   save: (note: Note): Promise<void> => upsert('notes', note.id, note),
@@ -249,9 +277,6 @@ export const dbNotes = {
   },
 };
 
-/* ─────────────────────────────────────────────
-   Events API
-   ───────────────────────────────────────────── */
 export const dbEvents = {
   getAll: (): AppEvent[] => getAll<AppEvent>('events'),
   save: (ev: AppEvent): Promise<void> => upsert('events', ev.id, ev),
@@ -265,9 +290,6 @@ export const dbEvents = {
   },
 };
 
-/* ─────────────────────────────────────────────
-   Tasks API
-   ───────────────────────────────────────────── */
 export const dbTasks = {
   getAll: (): AppTask[] => getAll<AppTask>('tasks'),
   save: (task: AppTask): Promise<void> => upsert('tasks', task.id, task),
@@ -281,9 +303,6 @@ export const dbTasks = {
   },
 };
 
-/* ─────────────────────────────────────────────
-   Shopping Lists API
-   ───────────────────────────────────────────── */
 export const dbShopping = {
   getAll: (): ShoppingList[] => getAll<ShoppingList>('shopping_lists'),
   save: (list: ShoppingList): Promise<void> => upsert('shopping_lists', list.id, list),
@@ -297,9 +316,6 @@ export const dbShopping = {
   },
 };
 
-/* ─────────────────────────────────────────────
-   Settings API (key-value store)
-   ───────────────────────────────────────────── */
 export const dbSettings = {
   get: (key: string): string | null => {
     const d = getDb();
@@ -316,19 +332,16 @@ export const dbSettings = {
     } else {
       d.run(`INSERT INTO settings (key, value) VALUES (?, ?)`, [key, value]);
     }
-    await persistToLocalStorage();
+    await persistToStorage();
   },
   
   delete: async (key: string): Promise<void> => {
     const d = getDb();
     d.run(`DELETE FROM settings WHERE key = ?`, [key]);
-    await persistToLocalStorage();
+    await persistToStorage();
   },
 };
 
-/* ─────────────────────────────────────────────
-   Export / Import the raw SQLite .db file
-   ───────────────────────────────────────────── */
 export const exportDbFile = (): Uint8Array | null => {
   if (!db) return null;
   return db.export();
@@ -337,10 +350,9 @@ export const exportDbFile = (): Uint8Array | null => {
 export const importDbFile = async (data: Uint8Array): Promise<void> => {
   if (!SQL) throw new Error('[SQLite] SQL.js not initialized');
   db = new SQL.Database(data);
-  await persistToLocalStorage();
+  await persistToStorage();
 };
 
-/** Get the base64 blob string (for backup JSON) */
 export const getDbBase64 = async (): Promise<string | null> => {
   if (!db) return null;
   const data = db.export();
@@ -348,24 +360,21 @@ export const getDbBase64 = async (): Promise<string | null> => {
   return encrypt(b64, await getEncryptionKey());
 };
 
-/** Restore from base64 blob string */
 export const restoreDbFromBase64 = async (b64: string): Promise<void> => {
   if (!SQL) throw new Error('[SQLite] SQL.js not initialized');
   
-  // فك التشفير
   let rawB64: string;
   try {
     rawB64 = await decrypt(b64, await getEncryptionKey());
   } catch {
-    rawB64 = b64; // fallback للتوافق
+    rawB64 = b64; 
   }
   
   const data = base64ToUint8(rawB64);
   db = new SQL.Database(data);
-  await persistToLocalStorage();
+  await persistToStorage();
 };
 
-/** Clear all data and reset database */
 export const resetDatabase = async (): Promise<void> => {
   if (db) {
     db.run(`DELETE FROM notes`);
@@ -373,11 +382,10 @@ export const resetDatabase = async (): Promise<void> => {
     db.run(`DELETE FROM tasks`);
     db.run(`DELETE FROM shopping_lists`);
     db.run(`DELETE FROM settings`);
-    await persistToLocalStorage();
+    await persistToStorage();
   }
 };
 
-/** Close database connection */
 export const closeDatabase = (): void => {
   if (db) {
     db.close();
