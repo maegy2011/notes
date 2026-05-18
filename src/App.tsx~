@@ -830,6 +830,8 @@ export default function App() {
       lockHelpers.unlockAllNotes();
       setNotes(prev => prev.map(n => ({ ...n, isLocked: false })));
       showToast('🔓 تم فتح جميع الملاحظات المقفلة');
+    } else if (pinLockMode === 'set') {
+      showToast('✅ تم تعيين الرقم السري بنجاح');
     }
     setPinLockMode(null);
   };
@@ -1145,7 +1147,7 @@ export default function App() {
 
   if (!dbReady) {
     return (
-      <div className="h-[100dvh] w-full bg-slate-950 text-slate-100 font-['Cairo'] antialiased flex items-center justify-center overflow-hidden">
+      <div className="h-[100dvh] w-full bg-slate-950 text-slate-100 font-['Cairo'] antialiased flex items-center justify-center">
         <div className="text-center space-y-3 animate-pulse">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-rose-500 flex items-center justify-center mx-auto shadow-lg">
             <span className="text-2xl">📝</span>
@@ -1157,6 +1159,7 @@ export default function App() {
     );
   }
 
+  // ✅ تطبيق H-[100dvh] و Shrink-0 لتثبيت التصميم (Sticky Layout)
   return (
     <div className="h-[100dvh] w-full bg-slate-950 text-slate-100 font-['Cairo'] antialiased overflow-hidden">
       <div className="w-full h-full bg-slate-900 flex flex-col relative">
@@ -1583,6 +1586,7 @@ export default function App() {
             </div>
           )}
 
+          {/* Floating Action Button */}
           <EnhancedFAB
             activeTab={activeTab}
             onAddNote={openNewNoteEditor}
@@ -1606,6 +1610,7 @@ export default function App() {
 
         <Toast message={toastMsg} />
 
+        {/* Overlays / Modals */}
         {isSortMenuOpen && (
           <div 
             className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px]" 

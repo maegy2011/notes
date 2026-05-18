@@ -3,10 +3,9 @@ import { Note, ThemeMode } from '../types';
 import {
   BarChart2, RefreshCcw, Cloud, Trash2, Heart, Award, Lock, LockKeyhole,
   ShieldCheck, Sun, Moon, Monitor, Sparkles, Layout, Type, ArrowUpDown,
-  Compass, Palette, Download, Upload, Database, Link2, KeyRound, RefreshCw, Fingerprint
+  Compass, Palette, Download, Upload, Database, Link2, KeyRound, RefreshCw
 } from 'lucide-react';
 import { tursoHelpers, TursoConfig } from '../utils/tursoSync';
-import { biometricHelpers } from './PinLock';
 
 export interface AppSettings {
   syncOnLaunch: boolean;
@@ -49,10 +48,6 @@ export const StatsView: React.FC<StatsViewProps> = ({
   const [isTesting, setIsTesting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Biometric States
-  const [bioSupported, setBioSupported] = useState(false);
-  const [bioEnabled, setBioEnabled] = useState(biometricHelpers.isEnabled());
-
   useEffect(() => {
     tursoHelpers.saveConfig({
       url: tursoUrl,
@@ -60,16 +55,6 @@ export const StatsView: React.FC<StatsViewProps> = ({
       autoSync: tursoAutoSync
     });
   }, [tursoUrl, tursoToken, tursoAutoSync]);
-
-  useEffect(() => {
-    const checkBio = async () => {
-      if (biometricHelpers.isMobile()) {
-        const supported = await biometricHelpers.isSupported();
-        setBioSupported(supported);
-      }
-    };
-    checkBio();
-  }, []);
 
   const handleTestTurso = async () => {
     if (!tursoUrl.trim() || !tursoToken.trim()) {
@@ -107,22 +92,6 @@ export const StatsView: React.FC<StatsViewProps> = ({
       if (import.meta.env.DEV) console.error('[Turso Sync Error]', err);
     } finally {
       setIsSyncing(false);
-    }
-  };
-
-  const handleToggleBiometric = async () => {
-    if (bioEnabled) {
-      biometricHelpers.clear();
-      setBioEnabled(false);
-      showToast('تم إيقاف الدخول بالبصمة');
-    } else {
-      const success = await biometricHelpers.register();
-      if (success) {
-        setBioEnabled(true);
-        showToast('تم تفعيل الدخول بالبصمة بنجاح');
-      } else {
-        showToast('❌ تعذر تفعيل البصمة. تأكد من إعدادات جهازك.');
-      }
     }
   };
 
@@ -349,30 +318,6 @@ export const StatsView: React.FC<StatsViewProps> = ({
             )}
           </div>
 
-          {/* Biometric Toggle for Mobile */}
-          {hasPin && bioSupported && (
-            <div className="flex items-center justify-between pt-2 border-t border-slate-700/30">
-              <div className="flex items-center gap-2">
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${bioEnabled ? 'bg-sky-500/10 text-sky-400' : 'bg-slate-800 text-slate-500'}`}>
-                  <Fingerprint size={15} />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-slate-200">الدخول بالبصمة / الوجه</h4>
-                  <p className="text-[10px] text-slate-400">
-                    استخدم المقاييس الحيوية للجهاز
-                  </p>
-                </div>
-              </div>
-              
-              <button
-                onClick={handleToggleBiometric}
-                className={`w-10 h-6 rounded-full transition-colors relative p-0.5 ${bioEnabled ? 'bg-sky-500' : 'bg-slate-700'}`}
-              >
-                <div className={`w-5 h-5 bg-slate-950 rounded-full transition-transform ${bioEnabled ? 'translate-x-0' : '-translate-x-4'}`} />
-              </button>
-            </div>
-          )}
-
           <div className="flex items-center justify-between pt-2 border-t border-slate-700/30">
             <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
               <LockKeyhole size={13} className="text-amber-400" />
@@ -389,10 +334,7 @@ export const StatsView: React.FC<StatsViewProps> = ({
                     تغيير الرمز
                   </button>
                   <button
-                    onClick={() => {
-                      onClearPin();
-                      setBioEnabled(false);
-                    }}
+                    onClick={onClearPin}
                     className="text-[10px] bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 px-2 py-1 rounded-lg transition-colors"
                   >
                     إزالة
@@ -477,6 +419,7 @@ export const StatsView: React.FC<StatsViewProps> = ({
             />
           </div>
 
+          {/* ✅ تم تغليف الرمز بـ Form لمنع تحذير DOM Password Field */}
           <form className="space-y-1" onSubmit={e => e.preventDefault()} autoComplete="off">
             <label className="text-[10px] text-slate-400 flex items-center gap-1 pr-1">
               <KeyRound size={12} className="text-slate-500" />
