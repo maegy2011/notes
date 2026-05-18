@@ -164,24 +164,6 @@ return Array.from(new Uint8Array(exported))
 .join('');
 };
 
-
-    const computedHash = await hashPin(enteredPin);
-    // ✅ مقارنة آمنة — كلا الطول والمحتوى يجب أن يتطابقا
-    const computedLen = computedHash.length;
-    const storedLen = storedHash.length;
-    // تجنب إرجاع false في الحال إذا كان الطول مختلفاً — استمر في المقارنة
-    const maxLen = Math.max(computedLen, storedLen);
-    if (maxLen === 0) return false; // كلاهما فارغ
-    let result = 0;
-    for (let i = 0; i < maxLen; i++) {
-      const c1 = i < computedLen ? computedHash.charCodeAt(i) : 0;
-      const c2 = i < storedLen ? storedHash.charCodeAt(i) : 0;
-      result |= c1 ^ c2;
-    }
-    return result === 0;
-
-
-  // داخل المكون PinLock ولكن خارج دالة verifyPin
 const getStoredPinHash = (): string | null => {
   return localStorage.getItem(PIN_STORAGE_KEY);
 };
@@ -191,7 +173,6 @@ const savePinHash = async (newPin: string) => {
   localStorage.setItem(PIN_STORAGE_KEY, hash);
 };
 
-// ثم دالة verifyPin:
 const verifyPin = async (enteredPin: string, storedHash: string): Promise<boolean> => {
   const computedHash = await hashPin(enteredPin);
   const computedLen = computedHash.length;
@@ -206,7 +187,6 @@ const verifyPin = async (enteredPin: string, storedHash: string): Promise<boolea
   }
   return result === 0;
 };
-
 
   const handleDelete = () => {
     if (currentIndex === 0) return;
