@@ -136,23 +136,28 @@ export const PinLock: React.FC<PinLockProps> = ({
     return salt;
   };
 
+  // ✅ استخدام deriveBits لحل مشكلة InvalidAccessError بالكامل
   const hashPin = async (pin: string): Promise<string> => {
     const salt = getDeviceSalt();
     const encoder = new TextEncoder();
     const pinData = encoder.encode(pin);
     const saltData = encoder.encode(salt);
-    const combined = new Uint8Array(pinData.length + saltData.length);
-    combined.set(pinData, 0);
-    combined.set(saltData, pinData.length);
-    const key = await crypto.subtle.deriveKey(
-      { name: 'PBKDF2', salt: saltData, iterations: 100000, hash: 'SHA-256' },
-      await crypto.subtle.importKey('raw', pinData, 'PBKDF2', false, ['deriveBits']),
-      { name: 'HMAC', hash: 'SHA-256' },
-      true,
-      ['sign', 'verify']
+    
+    const baseKey = await crypto.subtle.importKey(
+      'raw',
+      pinData,
+      'PBKDF2',
+      false,
+      ['deriveBits']
     );
-    const exported = await crypto.subtle.exportKey('raw', key);
-    return Array.from(new Uint8Array(exported))
+    
+    const derivedBits = await crypto.subtle.deriveBits(
+      { name: 'PBKDF2', salt: saltData, iterations: 100000, hash: 'SHA-256' },
+      baseKey,
+      256
+    );
+    
+    return Array.from(new Uint8Array(derivedBits))
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
   };
@@ -239,35 +244,23 @@ export const PinLock: React.FC<PinLockProps> = ({
 
   const getTitle = () => {
     switch (mode) {
-      case 'set':
-        return isConfirming ? 'تأكيد الرقم السري' : 'تعيين رقم سري جديد';
-      case 'unlock':
-        return `فتح: ${noteTitle || 'الملاحظة'}`;
-      case 'verify':
-        return 'التحقق من هويتك';
-      case 'unlock_all':
-        return 'فتح جميع الملاحظات';
-      case 'lock_all':
-        return 'قفل جميع الملاحظات';
-      default:
-        return 'أدخل الرقم السري';
+      case 'set': return isConfirming ? 'تأكيد الرقم السري' : 'تعيين رقم سري جديد';
+      case 'unlock': return `فتح: ${noteTitle || 'الملاحظة'}`;
+      case 'verify': return 'التحقق من هويتك';
+      case 'unlock_all': return 'فتح جميع الملاحظات';
+      case 'lock_all': return 'قفل جميع الملاحظات';
+      default: return 'أدخل الرقم السري';
     }
   };
 
   const getSubtitle = () => {
     switch (mode) {
-      case 'set':
-        return isConfirming ? 'أعد إدخال الرقم السري المكون من 4 أرقام' : 'اختر رقماً سرياً مكوناً من 4 أرقام لحماية ملاحظاتك';
-      case 'unlock':
-        return 'أدخل الرقم السري لفتح هذه الملاحظة';
-      case 'verify':
-        return 'أدخل الرقم السري للمتابعة';
-      case 'unlock_all':
-        return 'أدخل الرقم السري لفتح جميع الملاحظات المقفلة';
-      case 'lock_all':
-        return 'أدخل الرقم السري لقفل جميع الملاحظات';
-      default:
-        return 'أدخل الرقم السري المكون من 4 أرقام';
+      case 'set': return isConfirming ? 'أعد إدخال الرقم السري المكون من 4 أرقام' : 'اختر رقماً سرياً مكوناً من 4 أرقام لحماية ملاحظاتك';
+      case 'unlock': return 'أدخل الرقم السري لفتح هذه الملاحظة';
+      case 'verify': return 'أدخل الرقم السري للمتابعة';
+      case 'unlock_all': return 'أدخل الرقم السري لفتح جميع الملاحظات المقفلة';
+      case 'lock_all': return 'أدخل الرقم السري لقفل جميع الملاحظات';
+      default: return 'أدخل الرقم السري المكون من 4 أرقام';
     }
   };
 
@@ -278,7 +271,7 @@ export const PinLock: React.FC<PinLockProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-950/98 z-50 flex flex-col items-center justify-center p-6 animate-fadeIn select-none" dir="rtl">
+    <div className="fixed inset-0 bg-slate-950/98 z-[100] flex flex-col items-center justify-center p-6 animate-fadeIn select-none" dir="rtl">
       <div className={`w-full max-w-xs mx-auto bg-slate-900 rounded-3xl border border-slate-800 p-6 shadow-2xl ${shakeError ? 'animate-pulse' : ''}`}>
         
         <div className="flex justify-center mb-4">
@@ -374,21 +367,17 @@ export const lockHelpers = {
   isAppLockEnabled: (): boolean => {
     return localStorage.getItem(APP_LOCK_KEY) === 'true' && !!localStorage.getItem(PIN_STORAGE_KEY);
   },
-
   setAppLock: (enabled: boolean) => {
     localStorage.setItem(APP_LOCK_KEY, enabled ? 'true' : 'false');
   },
-
   hasPin: (): boolean => {
     return !!localStorage.getItem(PIN_STORAGE_KEY);
   },
-
   clearPin: () => {
     localStorage.removeItem(PIN_STORAGE_KEY);
     localStorage.removeItem(APP_LOCK_KEY);
     localStorage.removeItem(LOCKED_NOTES_KEY);
   },
-
   toggleNoteLock: (noteId: string, lock: boolean) => {
     try {
       const data = localStorage.getItem(LOCKED_NOTES_KEY);
@@ -401,17 +390,14 @@ export const lockHelpers = {
       localStorage.setItem(LOCKED_NOTES_KEY, JSON.stringify(ids));
     } catch {}
   },
-
   lockAllNotes: (noteIds: string[]) => {
     try {
       localStorage.setItem(LOCKED_NOTES_KEY, JSON.stringify(noteIds));
     } catch {}
   },
-
   unlockAllNotes: () => {
     localStorage.setItem(LOCKED_NOTES_KEY, JSON.stringify([]));
   },
-
   isNoteLocked: (noteId: string): boolean => {
     try {
       const data = localStorage.getItem(LOCKED_NOTES_KEY);
@@ -420,7 +406,6 @@ export const lockHelpers = {
       return false;
     }
   },
-
   getLockedNoteIds: (): string[] => {
     try {
       return JSON.parse(localStorage.getItem(LOCKED_NOTES_KEY) || '[]');
@@ -428,7 +413,6 @@ export const lockHelpers = {
       return [];
     }
   },
-
   clearLockedNotes: () => {
     localStorage.removeItem(LOCKED_NOTES_KEY);
   }

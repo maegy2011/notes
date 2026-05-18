@@ -36,32 +36,18 @@ interface StatsViewProps {
 }
 
 export const StatsView: React.FC<StatsViewProps> = ({
-  notes,
-  onResetData,
-  onClearAll,
-  onOpenPinSetup,
-  onClearPin,
-  onToggleAppLock,
-  hasPin,
-  appLockEnabled,
-  themeMode,
-  onChangeThemeMode,
-  settings,
-  onUpdateSettings,
-  onExportData,
-  onImportData,
-  showToast
+  notes, onResetData, onClearAll, onOpenPinSetup, onClearPin, onToggleAppLock,
+  hasPin, appLockEnabled, themeMode, onChangeThemeMode, settings, onUpdateSettings,
+  onExportData, onImportData, showToast
 }) => {
   const [cloudSync, setCloudSync] = useState(settings.syncOnLaunch);
 
-  // Turso Sync States
   const [tursoUrl, setTursoUrl] = useState(() => tursoHelpers.getConfig().url);
   const [tursoToken, setTursoToken] = useState(() => tursoHelpers.getConfig().token);
   const [tursoAutoSync, setTursoAutoSync] = useState(() => tursoHelpers.getConfig().autoSync);
   const [isTesting, setIsTesting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Save Turso config on change
   useEffect(() => {
     tursoHelpers.saveConfig({
       url: tursoUrl,
@@ -103,9 +89,7 @@ export const StatsView: React.FC<StatsViewProps> = ({
       const config: TursoConfig = { url: sanitized, token: tursoToken, autoSync: tursoAutoSync };
       await tursoHelpers.syncNow(config, showToast);
     } catch (err) {
-      if (import.meta.env.DEV) {
-        console.error('[Turso Sync Error]', err);
-      }
+      if (import.meta.env.DEV) console.error('[Turso Sync Error]', err);
     } finally {
       setIsSyncing(false);
     }
@@ -129,13 +113,11 @@ export const StatsView: React.FC<StatsViewProps> = ({
 
   return (
     <div className="p-4 space-y-4 pb-24 animate-fadeIn select-none">
-      {/* Title block */}
       <div className="flex items-center gap-2 mb-2">
         <BarChart2 size={18} className="text-amber-500" />
         <h2 className="text-sm font-bold text-white">لوحة الإعدادات والأداء</h2>
       </div>
 
-      {/* Theme Selection Section */}
       <div className="bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700/60 space-y-2.5">
         <div className="flex items-center gap-2">
           <Sun size={16} className="text-amber-400" />
@@ -166,7 +148,6 @@ export const StatsView: React.FC<StatsViewProps> = ({
         </div>
       </div>
 
-      {/* Customization Settings Window */}
       <div className="bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700/60 space-y-3.5">
         <div className="flex items-center gap-2">
           <Sparkles size={16} className="text-amber-400" />
@@ -174,17 +155,16 @@ export const StatsView: React.FC<StatsViewProps> = ({
         </div>
 
         <div className="space-y-3">
-          {/* Default Screen */}
           <div className="flex items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-2 text-slate-300">
               <Compass size={14} className="text-slate-400" />
-              <span>الشاشة الافتراضية عند الفتح:</span>
+              <span>الشاشة الافتراضية:</span>
             </div>
             <select
               value={settings.defaultScreen}
               onChange={(e) => {
                 onUpdateSettings({ defaultScreen: e.target.value });
-                showToast(`تم اختيار الشاشة الافتراضية: ${e.target.value === 'notes' ? 'الملاحظات' : e.target.value === 'tasks' ? 'المهام' : e.target.value === 'shopping' ? 'التسوق' : e.target.value === 'calendar' ? 'التقويم' : 'الإعدادات'}`);
+                showToast(`تم اختيار الشاشة الافتراضية بنجاح`);
               }}
               className="bg-slate-900 text-slate-200 text-[11px] rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-amber-500/50"
             >
@@ -196,34 +176,32 @@ export const StatsView: React.FC<StatsViewProps> = ({
             </select>
           </div>
 
-          {/* Default Note Color */}
           <div className="flex items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-2 text-slate-300">
               <Palette size={14} className="text-slate-400" />
-              <span>لون الملاحظة الافتراضي الجديد:</span>
+              <span>اللون الافتراضي:</span>
             </div>
             <select
               value={settings.defaultColor}
               onChange={(e) => {
                 onUpdateSettings({ defaultColor: e.target.value });
-                showToast('تم تعيين لون الملاحظة الجديد الافتراضي');
+                showToast('تم تعيين اللون الافتراضي');
               }}
               className="bg-slate-900 text-slate-200 text-[11px] rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-amber-500/50"
             >
               <option value="amber">🔶 كهرماني</option>
               <option value="emerald">🟢 أخضر زمردي</option>
-              <option value="sky">🔵 أزرق سماوي</option>
+              <option value="sky">🔵 سماوي</option>
               <option value="rose">🔴 وردي</option>
               <option value="purple">🟣 بنفسجي</option>
               <option value="slate">🔘 رمادي</option>
             </select>
           </div>
 
-          {/* Default Font Type */}
           <div className="flex items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-2 text-slate-300">
               <Type size={14} className="text-slate-400" />
-              <span>نوع خط الكتابة الافتراضي:</span>
+              <span>نوع الخط:</span>
             </div>
             <select
               value={settings.defaultFontType}
@@ -233,65 +211,62 @@ export const StatsView: React.FC<StatsViewProps> = ({
               }}
               className="bg-slate-900 text-slate-200 text-[11px] rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-amber-500/50"
             >
-              <option value="cairo">خط القاهرة (Cairo)</option>
-              <option value="monospace">أحادي المسافة (Monospace)</option>
-              <option value="sans-serif">خط بسيط (Sans-Serif)</option>
-              <option value="serif">خط كلاسيكي (Serif)</option>
+              <option value="cairo">القاهرة (Cairo)</option>
+              <option value="monospace">أحادي (Monospace)</option>
+              <option value="sans-serif">بسيط (Sans-Serif)</option>
+              <option value="serif">كلاسيكي (Serif)</option>
             </select>
           </div>
 
-          {/* Default Font Size */}
           <div className="flex items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-2 text-slate-300">
               <Layout size={14} className="text-slate-400" />
-              <span>حجم خط الكتابة الافتراضي:</span>
+              <span>حجم الخط:</span>
             </div>
             <select
               value={settings.defaultFontSize}
               onChange={(e) => {
                 onUpdateSettings({ defaultFontSize: e.target.value });
-                showToast('تم تحديث حجم الخط الافتراضي');
+                showToast('تم تحديث حجم الخط');
               }}
               className="bg-slate-900 text-slate-200 text-[11px] rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-amber-500/50"
             >
               <option value="sm">صغير جداً</option>
-              <option value="base">عادي/متوسط</option>
+              <option value="base">عادي</option>
               <option value="lg">كبير</option>
               <option value="xl">كبير جداً</option>
             </select>
           </div>
 
-          {/* List Item Height */}
           <div className="flex items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-2 text-slate-300">
               <Type size={14} className="text-slate-400" />
-              <span>ارتفاع عناصر القائمة:</span>
+              <span>ارتفاع القائمة:</span>
             </div>
             <select
               value={settings.listItemHeight}
               onChange={(e) => {
                 onUpdateSettings({ listItemHeight: e.target.value });
-                showToast(`تم تعديل ارتفاع القائمة إلى: ${e.target.value === 'normal' ? 'طبيعي' : e.target.value === 'small' ? 'صغير' : 'صغير جداً'}`);
+                showToast(`تم تعديل ارتفاع القائمة`);
               }}
               className="bg-slate-900 text-slate-200 text-[11px] rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-amber-500/50"
             >
-              <option value="normal">طبيعي (Normal)</option>
-              <option value="small">صغير (Small)</option>
-              <option value="tiny">ضئيل/صغير جداً (Tiny)</option>
+              <option value="normal">طبيعي</option>
+              <option value="small">صغير</option>
+              <option value="tiny">صغير جداً</option>
             </select>
           </div>
 
-          {/* Default Sort Order */}
           <div className="flex items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-2 text-slate-300">
               <ArrowUpDown size={14} className="text-slate-400" />
-              <span>ترتيب الفرز الافتراضي للملاحظات:</span>
+              <span>ترتيب الفرز:</span>
             </div>
             <select
               value={settings.defaultSortOrder}
               onChange={(e) => {
                 onUpdateSettings({ defaultSortOrder: e.target.value });
-                showToast('تم تحديث ترتيب الفرز الافتراضي');
+                showToast('تم تحديث الفرز الافتراضي');
               }}
               className="bg-slate-900 text-slate-200 text-[11px] rounded-lg px-2.5 py-1.5 border border-slate-700 focus:outline-none focus:border-amber-500/50"
             >
@@ -300,13 +275,12 @@ export const StatsView: React.FC<StatsViewProps> = ({
               <option value="color">🎨 حسب اللون</option>
               <option value="title">🔤 أبجدياً (العنوان)</option>
               <option value="reminder">🔔 وقت التذكير</option>
-              <option value="last-used">🔄 آخر ترتيب مستخدم</option>
+              <option value="last-used">🔄 آخر مستخدم</option>
             </select>
           </div>
         </div>
       </div>
 
-      {/* Lock Security Section */}
       <div className="bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700/60">
         <div className="flex items-center gap-2 mb-3">
           <ShieldCheck size={16} className="text-sky-400" />
@@ -314,7 +288,6 @@ export const StatsView: React.FC<StatsViewProps> = ({
         </div>
 
         <div className="space-y-3">
-          {/* App Lock Toggle */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${appLockEnabled ? 'bg-sky-500/10 text-sky-400' : 'bg-slate-800 text-slate-500'}`}>
@@ -323,9 +296,7 @@ export const StatsView: React.FC<StatsViewProps> = ({
               <div>
                 <h4 className="text-xs font-bold text-slate-200">قفل التطبيق بالرقم السري</h4>
                 <p className="text-[10px] text-slate-400">
-                  {hasPin 
-                    ? appLockEnabled ? 'التطبيق محمي عند فتحه' : 'الرقم السري موجود لكن التطبيق غير مقفل'
-                    : 'لم يتم تعيين رقم سري بعد'}
+                  {hasPin ? appLockEnabled ? 'التطبيق محمي عند فتحه' : 'الرقم السري موجود لكن التطبيق غير مقفل' : 'لم يتم تعيين رقم سري بعد'}
                 </p>
               </div>
             </div>
@@ -347,7 +318,6 @@ export const StatsView: React.FC<StatsViewProps> = ({
             )}
           </div>
 
-          {/* Locked notes count + Change/Remove PIN */}
           <div className="flex items-center justify-between pt-2 border-t border-slate-700/30">
             <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
               <LockKeyhole size={13} className="text-amber-400" />
@@ -376,7 +346,6 @@ export const StatsView: React.FC<StatsViewProps> = ({
         </div>
       </div>
 
-      {/* Grid counters */}
       <div className="grid grid-cols-2 gap-2.5">
         <div className="bg-slate-800/80 p-3 rounded-2xl border border-slate-700/60">
           <span className="text-[11px] text-slate-400 block mb-0.5">إجمالي الملاحظات</span>
@@ -405,15 +374,14 @@ export const StatsView: React.FC<StatsViewProps> = ({
         </div>
       </div>
 
-      {/* Cloud Synchronisation status */}
       <div className="bg-slate-850 p-3.5 rounded-2xl border border-slate-800 flex items-center justify-between mt-2">
         <div className="flex items-center gap-2.5">
           <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${cloudSync ? 'bg-sky-500/10 text-sky-400' : 'bg-slate-800 text-slate-500'}`}>
             <Cloud size={16} />
           </div>
           <div>
-            <h4 className="text-xs font-bold text-slate-200">المزامنة السحابية المشفرة</h4>
-            <p className="text-[10px] text-slate-400">{cloudSync ? 'متصل ومحمي تلقائياً' : 'المزامنة متوقفة حالياً'}</p>
+            <h4 className="text-xs font-bold text-slate-200">المزامنة السحابية</h4>
+            <p className="text-[10px] text-slate-400">{cloudSync ? 'متصل تلقائياً' : 'متوقفة حالياً'}</p>
           </div>
         </div>
 
@@ -425,7 +393,6 @@ export const StatsView: React.FC<StatsViewProps> = ({
         </button>
       </div>
 
-      {/* Turso DB Sync (Optional) Section */}
       <div className="bg-slate-800/80 p-3.5 rounded-2xl border border-slate-700/60 space-y-3.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -433,12 +400,11 @@ export const StatsView: React.FC<StatsViewProps> = ({
             <h3 className="text-xs font-bold text-slate-200">🔄 مزامنة Turso (اختياري)</h3>
           </div>
           <span className="text-[9px] bg-sky-500/10 text-sky-400 px-2 py-0.5 rounded-full border border-sky-500/20 font-bold">
-            قاعدة بيانات Edge
+            قاعدة Edge
           </span>
         </div>
 
         <div className="space-y-3">
-          {/* DB URL Input */}
           <div className="space-y-1">
             <label className="text-[10px] text-slate-400 flex items-center gap-1 pr-1">
               <Link2 size={12} className="text-slate-500" />
@@ -453,8 +419,8 @@ export const StatsView: React.FC<StatsViewProps> = ({
             />
           </div>
 
-          {/* Auth Token Input */}
-          <div className="space-y-1">
+          {/* ✅ تم تغليف الرمز بـ Form لمنع تحذير DOM Password Field */}
+          <form className="space-y-1" onSubmit={e => e.preventDefault()} autoComplete="off">
             <label className="text-[10px] text-slate-400 flex items-center gap-1 pr-1">
               <KeyRound size={12} className="text-slate-500" />
               <span>رمز المرور (Auth Token):</span>
@@ -464,11 +430,11 @@ export const StatsView: React.FC<StatsViewProps> = ({
               value={tursoToken}
               onChange={e => setTursoToken(e.target.value)}
               placeholder="••••••••••••••••••••••••••••••••"
+              autoComplete="new-password"
               className="w-full bg-slate-900 text-slate-200 text-xs rounded-xl px-3 py-2.5 border border-slate-700 focus:outline-none focus:border-sky-500/50 placeholder:text-slate-600 dir-ltr text-left font-sans"
             />
-          </div>
+          </form>
 
-          {/* Action Buttons */}
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={handleTestTurso}
@@ -507,11 +473,10 @@ export const StatsView: React.FC<StatsViewProps> = ({
             </button>
           </div>
 
-          {/* Auto Sync Toggle */}
           <div className="flex items-center justify-between pt-1.5 border-t border-slate-700/40">
             <div>
               <h4 className="text-xs font-bold text-slate-200">المزامنة التلقائية</h4>
-              <p className="text-[10px] text-slate-400">مزامنة التعديلات تلقائياً مع كل حفظ</p>
+              <p className="text-[10px] text-slate-400">مزامنة التعديلات مع كل حفظ</p>
             </div>
             <button
               onClick={() => setTursoAutoSync(!tursoAutoSync)}
@@ -523,30 +488,25 @@ export const StatsView: React.FC<StatsViewProps> = ({
         </div>
       </div>
 
-      {/* Backup & Restore Controls */}
       <div className="space-y-2 pt-2">
         <span className="text-[11px] text-slate-500 font-medium px-1 block">النسخ الاحتياطي واستعادة البيانات</span>
         
         <div className="grid grid-cols-2 gap-2">
-          {/* Export Data Button */}
           <button
             onClick={onExportData}
             className="bg-slate-850 hover:bg-slate-800 text-slate-300 p-3 rounded-xl text-xs border border-slate-750 transition-colors flex flex-col items-center justify-center gap-1.5 text-center active:scale-95"
-            title="تصدير جميع البيانات في ملف JSON خارجي"
           >
             <Download size={18} className="text-amber-400" />
-            <span className="font-bold text-slate-200">تصدير البيانات (تنزيل)</span>
-            <span className="text-[9px] text-slate-500">حفظ ملاحظاتك وتفضيلاتك بملف خارجي</span>
+            <span className="font-bold text-slate-200">تصدير (تنزيل)</span>
+            <span className="text-[9px] text-slate-500">حفظ ملف خارجي</span>
           </button>
 
-          {/* Import Data Button */}
           <label
             className="bg-slate-850 hover:bg-slate-800 text-slate-300 p-3 rounded-xl text-xs border border-slate-750 transition-colors flex flex-col items-center justify-center gap-1.5 text-center cursor-pointer active:scale-95"
-            title="استيراد ورفع ملف النسخة الاحتياطية لاستعادتها"
           >
             <Upload size={18} className="text-sky-400" />
-            <span className="font-bold text-slate-200">استيراد البيانات (تحميل)</span>
-            <span className="text-[9px] text-slate-500">رفع ملف النسخة الاحتياطية واستعادتها</span>
+            <span className="font-bold text-slate-200">استيراد (تحميل)</span>
+            <span className="text-[9px] text-slate-500">رفع نسخة احتياطية</span>
             <input
               type="file"
               accept=".json"
@@ -557,9 +517,8 @@ export const StatsView: React.FC<StatsViewProps> = ({
         </div>
       </div>
 
-      {/* Storage controls */}
       <div className="space-y-2 pt-2">
-        <span className="text-[11px] text-slate-500 font-medium px-1 block">إدارة قاعدة البيانات المحلية</span>
+        <span className="text-[11px] text-slate-500 font-medium px-1 block">إدارة قاعدة البيانات</span>
         
         <button
           onClick={onResetData}
@@ -568,8 +527,8 @@ export const StatsView: React.FC<StatsViewProps> = ({
           <div className="flex items-center gap-2">
             <RefreshCcw size={14} className="text-amber-400" />
             <div className="text-right">
-              <span className="block font-bold text-slate-200">استعادة الملاحظات الافتراضية</span>
-              <span className="block text-[10px] text-slate-500">تحميل النماذج التوضيحية والأفكار الجاهزة</span>
+              <span className="block font-bold text-slate-200">استعادة النماذج</span>
+              <span className="block text-[10px] text-slate-500">تحميل الأفكار الجاهزة</span>
             </div>
           </div>
           <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-1 rounded">إعادة تعيين</span>
@@ -583,22 +542,18 @@ export const StatsView: React.FC<StatsViewProps> = ({
             <Trash2 size={14} className="text-rose-400" />
             <div className="text-right">
               <span className="block font-bold">مسح جميع الملاحظات</span>
-              <span className="block text-[10px] text-rose-400/70">حذف كافة البيانات المخزنة من المتصفح نهائياً</span>
+              <span className="block text-[10px] text-rose-400/70">حذف كافة البيانات</span>
             </div>
           </div>
           <span className="text-[10px] bg-rose-500/20 text-rose-300 px-2 py-1 rounded">حذف جذري</span>
         </button>
       </div>
 
-      {/* App information widget */}
       <div className="bg-slate-900/60 p-3 rounded-2xl border border-slate-850 text-center space-y-1 mt-4">
         <div className="flex justify-center text-amber-500">
           <Award size={18} />
         </div>
-        <h5 className="text-xs font-bold text-slate-300">ملاحظاتي للموبايل</h5>
-        <p className="text-[10px] text-slate-500 leading-relaxed max-w-xs mx-auto">
-          تم تصميم هذا التطبيق لتقديم تجربة مشابهة تماماً للتطبيقات الأصلية (Native) مع تخزين محلي وتجاوب فائق مع الشاشات اللمسية.
-        </p>
+        <h5 className="text-xs font-bold text-slate-300">ملاحظاتي</h5>
         <div className="pt-1 flex items-center justify-center gap-1 text-[10px] text-slate-400 font-medium">
           <span>صنع بكل</span>
           <Heart size={10} className="text-rose-500 fill-rose-500 inline" />

@@ -1,6 +1,15 @@
 @import "tailwindcss";
 
 @layer base {
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden; /* يمنع تحريك الشاشة بالكامل في الجوال */
+    overscroll-behavior-y: none; /* يمنع الـ Pull-to-refresh */
+  }
+
   body {
     font-family: 'Cairo', sans-serif;
     -webkit-tap-highlight-color: transparent;
@@ -37,6 +46,9 @@
   border-radius: 9999px;
 }
 
+/* ─────────────────────────────────────────────
+   Animations
+   ───────────────────────────────────────────── */
 @keyframes slideUp {
   from {
     transform: translateY(100%);
@@ -65,7 +77,9 @@
   animation: fadeIn 0.15s ease-in-out forwards;
 }
 
-/* contentEditable Rich Text Editor Placeholder */
+/* ─────────────────────────────────────────────
+   Rich Text Editor Styles
+   ───────────────────────────────────────────── */
 .rich-text-editor[contenteditable]:empty::before {
   content: attr(data-placeholder);
   color: #475569; /* slate-600 */
@@ -74,7 +88,6 @@
   display: block;
 }
 
-/* Rich text rendering styles */
 .rich-text-editor, .rich-text-view, .rich-text-preview {
   outline: none;
 }

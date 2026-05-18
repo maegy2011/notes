@@ -1147,7 +1147,7 @@ export default function App() {
 
   if (!dbReady) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 font-['Cairo'] antialiased flex items-center justify-center">
+      <div className="h-[100dvh] w-full bg-slate-950 text-slate-100 font-['Cairo'] antialiased flex items-center justify-center">
         <div className="text-center space-y-3 animate-pulse">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-rose-500 flex items-center justify-center mx-auto shadow-lg">
             <span className="text-2xl">📝</span>
@@ -1159,21 +1159,26 @@ export default function App() {
     );
   }
 
+  // ✅ تطبيق H-[100dvh] و Shrink-0 لتثبيت التصميم (Sticky Layout)
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-['Cairo'] antialiased">
-      <div className="w-full h-full min-h-screen bg-slate-900 flex flex-col relative overflow-hidden">
+    <div className="h-[100dvh] w-full bg-slate-950 text-slate-100 font-['Cairo'] antialiased overflow-hidden">
+      <div className="w-full h-full bg-slate-900 flex flex-col relative">
         
-        <MobileHeader
-          searchQuery={searchQuery}
-          setSearchQuery={(q) => {
-            setSearchQuery(q);
-            if (!q) setSearchResults(null);
-          }}
-          activeCount={notes.filter(n => !n.isArchived).length}
-          onOpenAdvancedSearch={() => setIsAdvancedSearchOpen(true)}
-        />
+        {/* Sticky Header */}
+        <div className="shrink-0 z-50 shadow-md">
+          <MobileHeader
+            searchQuery={searchQuery}
+            setSearchQuery={(q) => {
+              setSearchQuery(q);
+              if (!q) setSearchResults(null);
+            }}
+            activeCount={notes.filter(n => !n.isArchived).length}
+            onOpenAdvancedSearch={() => setIsAdvancedSearchOpen(true)}
+          />
+        </div>
 
-        <div className="flex-1 overflow-y-auto flex flex-col relative">
+        {/* Scrollable Content Area */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden relative">
           
           {activeTab === 'settings' ? (
             <StatsView
@@ -1226,7 +1231,7 @@ export default function App() {
               />
             </div>
           ) : activeTab === 'tasks' ? (
-            <div className="max-w-4xl mx-auto w-full">
+            <div className="max-w-4xl mx-auto w-full pb-20">
               <TaskView
                 tasks={tasks}
                 onEditTask={(t) => {
@@ -1240,7 +1245,7 @@ export default function App() {
               />
             </div>
           ) : activeTab === 'shopping' ? (
-            <div className="max-w-4xl mx-auto w-full h-full">
+            <div className="max-w-4xl mx-auto w-full h-full pb-20">
               <ShoppingView
                 lists={shoppingLists}
                 onSaveLists={handleSaveShoppingLists}
@@ -1581,6 +1586,7 @@ export default function App() {
             </div>
           )}
 
+          {/* Floating Action Button */}
           <EnhancedFAB
             activeTab={activeTab}
             onAddNote={openNewNoteEditor}
@@ -1604,6 +1610,7 @@ export default function App() {
 
         <Toast message={toastMsg} />
 
+        {/* Overlays / Modals */}
         {isSortMenuOpen && (
           <div 
             className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[2px]" 
@@ -1725,35 +1732,39 @@ export default function App() {
           />
         )}
 
-        <BottomNav
-          activeTab={activeTab}
-          setActiveTab={(tab) => {
-            setActiveTab(tab);
-            if (tab !== 'notes') {
-              setSelectedCategory('all');
+        {/* Sticky Footer */}
+        <div className="shrink-0 z-50 border-t border-slate-800/80">
+          <BottomNav
+            activeTab={activeTab}
+            setActiveTab={(tab) => {
+              setActiveTab(tab);
+              if (tab !== 'notes') {
+                setSelectedCategory('all');
+              }
+            }}
+            favoritesCount={notes.filter(n => n.isFavorite && !n.isTrash && !n.isArchived).length}
+            archiveCount={notes.filter(n => n.isArchived && !n.isTrash).length}
+            trashCount={notes.filter(n => n.isTrash).length}
+            calendarCount={
+              notes.filter(n => !n.isTrash && !n.isArchived).reduce((acc, n) => {
+                const main = n.reminder?.datetime ? 1 : 0;
+                const checklistTasks = n.checklist?.filter(t => t.reminderAt).length || 0;
+                return acc + main + checklistTasks;
+              }, 0) + 
+              events.length + 
+              tasks.filter(t => t.dueDate || t.reminderAt).length
             }
-          }}
-          favoritesCount={notes.filter(n => n.isFavorite && !n.isTrash && !n.isArchived).length}
-          archiveCount={notes.filter(n => n.isArchived && !n.isTrash).length}
-          trashCount={notes.filter(n => n.isTrash).length}
-          calendarCount={
-            notes.filter(n => !n.isTrash && !n.isArchived).reduce((acc, n) => {
-              const main = n.reminder?.datetime ? 1 : 0;
-              const checklistTasks = n.checklist?.filter(t => t.reminderAt).length || 0;
-              return acc + main + checklistTasks;
-            }, 0) + 
-            events.length + 
-            tasks.filter(t => t.dueDate || t.reminderAt).length
-          }
-          tasksCount={
-            tasks.filter(t => !t.isCompleted).length
-          }
-          shoppingCount={
-            shoppingLists.filter(l => !l.isArchived).reduce(
-              (s, l) => s + l.items.filter(i => !i.checked).length, 0
-            )
-          }
-        />
+            tasksCount={
+              tasks.filter(t => !t.isCompleted).length
+            }
+            shoppingCount={
+              shoppingLists.filter(l => !l.isArchived).reduce(
+                (s, l) => s + l.items.filter(i => !i.checked).length, 0
+              )
+            }
+          />
+        </div>
+        
       </div>
     </div>
   );
