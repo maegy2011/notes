@@ -358,27 +358,25 @@ export default function App() {
       setToastMsg(prev => prev === msg ? null : prev);
     }, 2500);
   };
-
-    const syncInProgressRef = useRef(false);
+   
+  const syncInProgressRef = useRef(false);
   
   const triggerAutoSync = async () => {
-    if (syncInProgressRef.current) return; // ✅ منع المزامنة المتوازية
-    const cfg = tursoHelpers.getConfig();
-    syncInProgressRef.current = true;
-    syncInProgress = true;
-    try {
+  if (syncInProgressRef.current) return;
+  const cfg = tursoHelpers.getConfig();
+  syncInProgressRef.current = true;
+
+  try {
     if (cfg.url && cfg.token && cfg.autoSync) {
       try {
         // Silent background sync
         await tursoHelpers.bootstrapTables(cfg);
-        
-        // Get local SQLite entities
+
         const localNotes = dbNotes.getAll();
         const localEvents = dbEvents.getAll();
         const localTasks = dbTasks.getAll();
         const localShopping = dbShopping.getAll();
 
-        // Merge and Sync (standard pipeline call)
         const downloadResult = await tursoHelpers.executeBatch(cfg, [
           { sql: 'SELECT id, data FROM notes' },
           { sql: 'SELECT id, data FROM events' },
@@ -391,27 +389,22 @@ export default function App() {
         const remoteTasks = downloadResult.results[2]?.response?.result?.rows?.map((r: any[]) => JSON.parse(r[1]?.value)) || [];
         const remoteShopping = downloadResult.results[3]?.response?.result?.rows?.map((r: any[]) => JSON.parse(r[1]?.value)) || [];
 
-        // Merge Notes
         const mergedNotes = mergeEntitiesLocal(localNotes, remoteNotes);
         dbNotes.replaceAll(mergedNotes);
         setNotes(mergedNotes);
 
-        // Merge Events
         const mergedEvents = mergeEntitiesLocal(localEvents, remoteEvents);
         dbEvents.replaceAll(mergedEvents);
         setEvents(mergedEvents);
 
-        // Merge Tasks
         const mergedTasks = mergeEntitiesLocal(localTasks, remoteTasks);
         dbTasks.replaceAll(mergedTasks);
         setTasks(mergedTasks);
 
-        // Merge Shopping
         const mergedShopping = mergeEntitiesLocal(localShopping, remoteShopping);
         dbShopping.replaceAll(mergedShopping);
         setShoppingLists(mergedShopping);
 
-        // Upload back
         const uploadStatements: { sql: string; args?: any[] }[] = [];
         mergedNotes.forEach(n => uploadStatements.push({ sql: 'INSERT OR REPLACE INTO notes (id, data) VALUES (?, ?)', args: [n.id, JSON.stringify(n)] }));
         mergedEvents.forEach(e => uploadStatements.push({ sql: 'INSERT OR REPLACE INTO events (id, data) VALUES (?, ?)', args: [e.id, JSON.stringify(e)] }));
@@ -424,11 +417,11 @@ export default function App() {
       } catch (err) {
         if (import.meta.env.DEV) console.warn('[Turso Auto-Sync] Background synchronization failed silently:', err);
       }
-    } finally {
-      syncInProgress = false;
     }
-  };
-  // Helper for merging
+  } finally {       // ✅ finally الآن تابع للـ try الخارجي الصحيح
+    syncInProgressRef.current = false;
+  }
+};
   const mergeEntitiesLocal = <T extends { id: string; updatedAt: string }>(local: T[], remote: T[]): T[] => {
 const mergedMap = new Map<string, T>();
 local.forEach(item => mergedMap.set(item.id, item));
