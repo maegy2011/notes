@@ -109,7 +109,6 @@ export const EventEditor: React.FC<EventEditorProps> = ({
     }
   }, [event, initialDate]);
 
-  // Auto-extend end time when start changes
   const handleStartChange = (val: string) => {
     setStartDatetime(val);
     if (!event && val) {
@@ -142,7 +141,6 @@ export const EventEditor: React.FC<EventEditorProps> = ({
 
   return (
     <div className="fixed inset-0 bg-slate-950 z-40 flex flex-col animate-slideUp overflow-hidden">
-      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800 shrink-0">
         <button
           onClick={onClose}
@@ -165,21 +163,18 @@ export const EventEditor: React.FC<EventEditorProps> = ({
         </button>
       </div>
 
-      {/* Body */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* Color strip */}
         <div className={`h-1.5 rounded-full ${EVENT_COLORS.find(c => c.id === color)?.bg ?? 'bg-sky-500'}`} />
 
-        {/* Title */}
         <input
           type="text"
+          dir="auto"
           value={title}
           onChange={e => setTitle(e.target.value)}
           placeholder="عنوان الحدث..."
           className="w-full bg-transparent text-white text-base font-bold placeholder:text-slate-600 border-b border-slate-800 pb-2 focus:outline-none focus:border-sky-500/60 transition-colors"
         />
 
-        {/* All-day toggle */}
         <div className="flex items-center justify-between bg-slate-900/60 rounded-xl border border-slate-800 px-3 py-2.5">
           <div className="flex items-center gap-2 text-xs text-slate-200">
             <Sun size={15} className="text-amber-400" />
@@ -193,7 +188,6 @@ export const EventEditor: React.FC<EventEditorProps> = ({
           </button>
         </div>
 
-        {/* Date / Time */}
         <div className="bg-slate-900/60 rounded-2xl border border-slate-800 p-3 space-y-3">
           <div className="flex items-center gap-2 text-xs text-slate-400 font-bold mb-1">
             <Calendar size={13} className="text-sky-400" />
@@ -224,7 +218,6 @@ export const EventEditor: React.FC<EventEditorProps> = ({
             )}
           </div>
 
-          {/* Duration display */}
           {!allDay && startDatetime && endDatetime && (
             (() => {
               const diff = (new Date(fromLocalInput(endDatetime)).getTime() - new Date(fromLocalInput(startDatetime)).getTime()) / 60000;
@@ -241,7 +234,6 @@ export const EventEditor: React.FC<EventEditorProps> = ({
           )}
         </div>
 
-        {/* Location */}
         <div className="bg-slate-900/60 rounded-2xl border border-slate-800 p-3 space-y-2">
           <div className="flex items-center gap-2 text-xs text-slate-400 font-bold">
             <MapPin size={13} className="text-emerald-400" />
@@ -249,6 +241,7 @@ export const EventEditor: React.FC<EventEditorProps> = ({
           </div>
           <input
             type="text"
+            dir="auto"
             value={location}
             onChange={e => setLocation(e.target.value)}
             placeholder="المكان أو رابط الاجتماع..."
@@ -256,13 +249,13 @@ export const EventEditor: React.FC<EventEditorProps> = ({
           />
         </div>
 
-        {/* Description */}
         <div className="bg-slate-900/60 rounded-2xl border border-slate-800 p-3 space-y-2">
           <div className="flex items-center gap-2 text-xs text-slate-400 font-bold">
             <AlignLeft size={13} className="text-slate-400" />
             <span>الوصف</span>
           </div>
           <textarea
+            dir="auto"
             value={description}
             onChange={e => setDescription(e.target.value)}
             rows={3}
@@ -271,7 +264,6 @@ export const EventEditor: React.FC<EventEditorProps> = ({
           />
         </div>
 
-        {/* Category */}
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-xs text-slate-400 font-bold">
             <Tag size={13} className="text-slate-400" />
@@ -295,7 +287,6 @@ export const EventEditor: React.FC<EventEditorProps> = ({
           </div>
         </div>
 
-        {/* Color */}
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-xs text-slate-400 font-bold">
             <Palette size={13} className="text-slate-400" />
@@ -316,7 +307,6 @@ export const EventEditor: React.FC<EventEditorProps> = ({
           </div>
         </div>
 
-        {/* Repeat */}
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-xs text-slate-400 font-bold">
             <Repeat size={13} className="text-slate-400" />
@@ -339,7 +329,6 @@ export const EventEditor: React.FC<EventEditorProps> = ({
           </div>
         </div>
 
-        {/* Delete */}
         {event && onDelete && (
           <div className="pt-2">
             {!showDelete ? (
@@ -362,7 +351,7 @@ export const EventEditor: React.FC<EventEditorProps> = ({
                   </button>
                   <button
                     onClick={() => setShowDelete(false)}
-                    className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-xl text-xs"
+                    className="flex-1 bg-slate-800 text-slate-300 py-2 rounded-xl text-xs"
                   >
                     إلغاء
                   </button>

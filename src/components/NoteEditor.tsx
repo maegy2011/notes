@@ -31,7 +31,6 @@ interface NoteEditorProps {
   showToast: (msg: string) => void;
 }
 
-// Helper functions moved outside component
 const toLocalDateTimeInput = (iso?: string): string => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -55,7 +54,6 @@ const formatReminderPreview = (iso?: string): string => {
   });
 };
 
-// DOMPurify configuration - centralized for consistency
 const DOMPURIFY_CONFIG = {
   ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'u', 'p', 'br',
                  'ul', 'ol', 'li', 'h1', 'h2', 'h3',
@@ -65,7 +63,6 @@ const DOMPURIFY_CONFIG = {
   FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'style'],
 };
 
-// Get default settings from localStorage
 const getDefaultSettings = () => {
   try {
     const saved = localStorage.getItem('notes_app_settings_v1');
@@ -76,7 +73,6 @@ const getDefaultSettings = () => {
       };
     }
   } catch {
-    // Ignore errors
   }
   return { defaultColor: 'amber' as NoteColor };
 };
@@ -120,14 +116,10 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
   const editorRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
-  // Memoize default settings
   const defaultSettings = useMemo(() => getDefaultSettings(), []);
-
-  // Memoize static data
   const categories: NoteCategory[] = useMemo(() => ['work', 'personal', 'ideas', 'study'], []);
   const colors: NoteColor[] = useMemo(() => ['amber', 'emerald', 'sky', 'rose', 'purple', 'slate'], []);
 
-  // Initialize note data
   useEffect(() => {
     if (note) {
       resetTitle(note.title);
@@ -158,7 +150,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
     }
   }, [note, resetTitle, resetContent, defaultSettings.defaultColor]);
 
-  // Update editor content with sanitized HTML
   useEffect(() => {
     if (editorRef.current) {
       const sanitized = DOMPurify.sanitize(content, DOMPURIFY_CONFIG);
@@ -166,7 +157,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
     }
   }, [content]);
 
-  // Memoized handlers
   const handleSimulateVoice = useCallback(() => {
     setIsRecording(true);
     showToast('جاري تسجيل الملاحظة الصوتية...');
@@ -332,7 +322,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
     else redoContent();
   }, [activeField, redoTitle, redoContent]);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       const tag = (document.activeElement as HTMLElement)?.tagName;
@@ -355,17 +344,8 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
     return () => window.removeEventListener('keydown', handleKey);
   }, [handleUndo, handleRedo]);
 
-  // Memoized derived values
-  const currentColorStyle = useMemo(() => 
-    COLOR_CLASSES[color] || COLOR_CLASSES.slate, 
-    [color]
-  );
-
-  const taskReminderCount = useMemo(() => 
-    checklist.filter(item => !!item.reminderAt).length, 
-    [checklist]
-  );
-
+  const currentColorStyle = useMemo(() => COLOR_CLASSES[color] || COLOR_CLASSES.slate, [color]);
+  const taskReminderCount = useMemo(() => checklist.filter(item => !!item.reminderAt).length, [checklist]);
   const reminderPreviewText = useMemo(() => {
     if (!reminderAtInput) return null;
     return formatReminderPreview(fromLocalDateTimeInput(reminderAtInput));
@@ -397,9 +377,11 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div>
+          {/* تم إضافة dir="auto" لحقل العنوان */}
           <input
             ref={titleRef}
             type="text"
+            dir="auto"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onFocus={() => setActiveField('title')}
@@ -436,7 +418,6 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
           </button>
         </div>
 
-        {/* Reminder panel */}
         <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-800 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-slate-200">
@@ -522,6 +503,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
                         <MapPin size={13} className="absolute right-3 top-2.5 text-slate-500" />
                         <input
                           type="text"
+                          dir="auto"
                           value={eventLocation}
                           onChange={(e) => setEventLocation(e.target.value)}
                           placeholder="مثال: قاعة الاجتماعات / المنزل / أونلاين"
@@ -534,6 +516,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
                       <label className="text-[10px] text-slate-500 mb-1 block">ملاحظات الحدث</label>
                       <input
                         type="text"
+                        dir="auto"
                         value={eventNote}
                         onChange={(e) => setEventNote(e.target.value)}
                         placeholder="رابط الاجتماع / معلومات إضافية"
@@ -568,14 +551,15 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
               onTogglePreview={() => {}}
             />
 
+            {/* تم إضافة dir="auto" لمحاذاة النص تلقائياً، وإزالة style={{direction: rtl}} */}
             <div
               ref={editorRef}
               contentEditable
+              dir="auto"
               onFocus={() => setActiveField('content')}
               onInput={(e) => setContent(e.currentTarget.innerHTML)}
-              data-placeholder="اكتب تفاصيل الملاحظة هنا... استخدم شريط التنسيق بالأعلى للتلوين، التكبير، وتعديل الخط مباشرة."
-              className="w-full min-h-[240px] bg-slate-900/50 text-slate-100 text-xs rounded-xl p-3.5 border border-slate-800 focus:outline-none focus:border-amber-500/40 leading-relaxed rich-text-editor overflow-y-auto select-text outline-none font-sans"
-              style={{ direction: 'rtl' }}
+              data-placeholder="اكتب تفاصيل الملاحظة هنا... المحرر يدعم العربية والإنجليزية بذكاء."
+              className="w-full min-h-[240px] bg-slate-900/50 text-slate-100 text-xs rounded-xl p-3.5 border border-slate-800 focus:outline-none focus:border-amber-500/40 leading-relaxed rich-text-editor overflow-y-auto select-text outline-none font-sans text-start"
             />
 
             <p className="text-[10px] text-slate-500 px-1 leading-relaxed">
@@ -617,6 +601,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
             <form onSubmit={handleAddChecklist} className="flex gap-1.5">
               <input
                 type="text"
+                dir="auto"
                 value={newChecklistItem}
                 onChange={(e) => setNewChecklistItem(e.target.value)}
                 placeholder="إضافة عنصر جديد للقائمة..."
@@ -646,7 +631,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({ note, onSave, onClose, s
                           onChange={() => toggleChecklist(item.id)}
                           className="rounded border-slate-700 text-amber-500 focus:ring-0 w-4 h-4 bg-slate-800 accent-amber-500"
                         />
-                        <span className={`text-xs transition-all ${
+                        <span dir="auto" className={`text-xs transition-all text-start ${
                           item.completed ? 'line-through text-slate-500' : 'text-slate-200'
                         }`}>
                           {item.text}
